@@ -27,7 +27,7 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://ope_user:ope_local_pass@localhost:5432/ope_dev"
     )
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.8-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
     FRONTEND_ORIGINS: str = "http://localhost:8081"
     TRUSTED_PROXY: bool = False
     RATE_LIMIT_PER_IP: int = 20

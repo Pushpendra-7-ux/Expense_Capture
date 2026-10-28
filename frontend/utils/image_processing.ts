@@ -32,17 +32,20 @@ export async function convertHeicIfNecessary(file: File): Promise<File> {
   }
 
   try {
-    // Dynamically import heic2any on web client
-    const heic2any = (await import('heic2any')).default;
-    const converted = await heic2any({
-      blob: file,
-      toType: 'image/jpeg',
-      quality: 0.85,
-    });
+    // Check if heic2any is available globally on window
+    const heic2any = typeof window !== 'undefined' ? (window as any).heic2any : null;
+    if (heic2any) {
+      const converted = await heic2any({
+        blob: file,
+        toType: 'image/jpeg',
+        quality: 0.85,
+      });
 
-    const blob = Array.isArray(converted) ? converted[0] : converted;
-    const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
-    return new File([blob], newName, { type: 'image/jpeg' });
+      const blob = Array.isArray(converted) ? converted[0] : converted;
+      const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+      return new File([blob], newName, { type: 'image/jpeg' });
+    }
+    throw new Error("Couldn't read this photo. Retake it or choose a JPEG/PNG.");
   } catch (err) {
     throw new Error(
       "Couldn't read this photo. Retake it or choose a JPEG/PNG."

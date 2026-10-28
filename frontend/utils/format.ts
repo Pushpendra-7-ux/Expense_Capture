@@ -33,37 +33,38 @@ export function formatTime(date: Date): string {
   });
 }
 
+function getKolkataYMD(date: Date): [number, number, number] {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+      .format(date)
+      .split('-');
+    return [parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10)];
+  } catch {
+    return [date.getFullYear(), date.getMonth(), date.getDate()];
+  }
+}
+
 /**
  * Format a Date for display (e.g., "28 Oct 2026" or "Today", "Yesterday").
  */
 export function formatDate(date: Date): string {
-  const now = new Date();
-  const todayIST = new Date(
-    now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })
-  );
-  const dateIST = new Date(
-    date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })
-  );
+  const [ty, tm, td] = getKolkataYMD(new Date());
+  const [dy, dm, dd] = getKolkataYMD(date);
 
-  const today = new Date(
-    todayIST.getFullYear(),
-    todayIST.getMonth(),
-    todayIST.getDate()
-  );
-  const target = new Date(
-    dateIST.getFullYear(),
-    dateIST.getMonth(),
-    dateIST.getDate()
-  );
+  const todayUtc = Date.UTC(ty, tm, td);
+  const targetUtc = Date.UTC(dy, dm, dd);
 
-  const diffDays = Math.floor(
-    (today.getTime() - target.getTime()) / (1000 * 60 * 60 * 24)
-  );
+  const diffDays = Math.round((todayUtc - targetUtc) / (1000 * 60 * 60 * 24));
 
   if (diffDays === 0) return 'Today';
   if (diffDays === 1) return 'Yesterday';
 
-  if (target.getFullYear() !== today.getFullYear()) {
+  if (dy !== ty) {
     return date.toLocaleDateString('en-IN', {
       day: 'numeric',
       month: 'short',

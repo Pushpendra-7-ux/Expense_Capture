@@ -185,7 +185,9 @@ export default function NoBillScreen() {
       {/* Hidden Web file input */}
       {typeof document !== 'undefined' && (
         <input
-          ref={(el) => (fileInputRef.current = el)}
+          ref={(el) => {
+            fileInputRef.current = el;
+          }}
           type="file"
           accept="image/*,application/pdf"
           multiple

@@ -163,6 +163,17 @@ export default function ExpenseDetailScreen() {
 
   const formatISTDate = (isoDateStr?: string) => {
     if (!isoDateStr) return '';
+    if (isoDateStr.includes('-') && !isoDateStr.includes('T')) {
+      const parts = isoDateStr.split('-');
+      if (parts.length === 3) {
+        const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0);
+        return d.toLocaleDateString('en-IN', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        });
+      }
+    }
     const d = new Date(isoDateStr);
     return d.toLocaleDateString('en-IN', {
       day: 'numeric',
@@ -242,6 +253,15 @@ export default function ExpenseDetailScreen() {
 
               {/* ── Details Card 1: Category & Receipt ──────── */}
               <View style={styles.card}>
+                <View style={styles.cardRow}>
+                  <Text style={styles.cardFieldLabel}>Expense Date</Text>
+                  <Text style={styles.cardFieldValue}>
+                    {formatISTDate(expense.expense_date)}
+                  </Text>
+                </View>
+
+                <View style={styles.cardDivider} />
+
                 <View style={styles.cardRow}>
                   <Text style={styles.cardFieldLabel}>Category</Text>
                   <Text style={styles.cardFieldValue}>

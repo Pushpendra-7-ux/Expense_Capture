@@ -43,6 +43,13 @@ export interface ExpensePayload {
   edited_fields?: string[];
 }
 
+export interface AttachmentRecord {
+  id: string;
+  mime: string;
+  filename: string | null;
+  kind: string;
+}
+
 export interface ExpenseRecord {
   id: string;
   reference_id: string;
@@ -62,6 +69,7 @@ export interface ExpenseRecord {
   possible_duplicate: boolean;
   created_at: string;
   attachment_count: number;
+  attachments?: AttachmentRecord[];
 }
 
 export interface ExpenseListResponse {

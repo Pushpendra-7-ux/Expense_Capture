@@ -33,6 +33,7 @@ interface DisplayExpense {
   category: string;
   iconName: keyof typeof Ionicons.glyphMap;
   date: Date;
+  timeFormatted?: string;
   status: string;
 }
 
@@ -228,7 +229,7 @@ function ExpenseRow({
         <Text style={styles.expenseAmount}>
           {formatINR(expense.amountPaise)}
         </Text>
-        <Text style={styles.expenseTime}>{formatTime(expense.date)}</Text>
+        <Text style={styles.expenseTime}>{expense.timeFormatted || formatTime(expense.date)}</Text>
         <StatusPill />
       </View>
     </Pressable>
@@ -335,17 +336,32 @@ export default function HomeScreen() {
   const [totalCount, setTotalCount] = useState(0);
 
   // Map backend API records to display items
-  const mapRecord = (r: ExpenseRecord): DisplayExpense => ({
-    id: r.id,
-    referenceId: r.reference_id,
-    merchant: r.merchant || 'Expense',
-    reason: r.reason,
-    amountPaise: r.amount_minor,
-    category: r.category,
-    iconName: getCategoryIcon(r.category),
-    date: new Date(r.created_at || r.expense_date),
-    status: 'Submitted',
-  });
+  const mapRecord = (r: ExpenseRecord): DisplayExpense => {
+    let dateObj: Date;
+    if (r.expense_date) {
+      const parts = r.expense_date.split('-');
+      if (parts.length === 3) {
+        dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0);
+      } else {
+        dateObj = new Date(r.expense_date);
+      }
+    } else {
+      dateObj = new Date(r.created_at);
+    }
+
+    return {
+      id: r.id,
+      referenceId: r.reference_id,
+      merchant: r.merchant || 'Expense',
+      reason: r.reason,
+      amountPaise: r.amount_minor,
+      category: r.category,
+      iconName: getCategoryIcon(r.category),
+      date: dateObj,
+      timeFormatted: r.created_at ? formatTime(new Date(r.created_at)) : formatTime(dateObj),
+      status: 'Submitted',
+    };
+  };
 
   useEffect(() => {
     // Health check with 3s delay indicator

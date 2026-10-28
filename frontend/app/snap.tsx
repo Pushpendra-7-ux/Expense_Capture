@@ -143,7 +143,9 @@ export default function SnapBillScreen() {
       {typeof document !== 'undefined' && (
         <>
           <input
-            ref={(el) => (cameraInputRef.current = el)}
+            ref={(el) => {
+              cameraInputRef.current = el;
+            }}
             type="file"
             accept="image/*"
             capture="environment"
@@ -151,7 +153,9 @@ export default function SnapBillScreen() {
             onChange={(e) => handleFileSelection(e.target.files)}
           />
           <input
-            ref={(el) => (pickerInputRef.current = el)}
+            ref={(el) => {
+              pickerInputRef.current = el;
+            }}
             type="file"
             accept="image/*,application/pdf"
             multiple

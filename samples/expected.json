@@ -1,0 +1,30 @@
+[
+  {
+    "filename": "sample_uber_receipt.jpg",
+    "expected_amount_minor": 6840,
+    "expected_date": "2024-10-28",
+    "expected_merchant": "Uber",
+    "expected_receipt_type": "bill_photo"
+  },
+  {
+    "filename": "sample_coffee_bill.jpg",
+    "expected_amount_minor": 32000,
+    "expected_date": "2024-10-11",
+    "expected_merchant": "Blue Tokai Coffee",
+    "expected_receipt_type": "bill_photo"
+  },
+  {
+    "filename": "sample_hotel_invoice.pdf",
+    "expected_amount_minor": 875000,
+    "expected_date": "2024-10-14",
+    "expected_merchant": "Taj Hotel",
+    "expected_receipt_type": "bill_photo"
+  },
+  {
+    "filename": "sample_upi_screenshot.png",
+    "expected_amount_minor": 15200,
+    "expected_date": "2024-10-05",
+    "expected_merchant": "Ola Cabs",
+    "expected_receipt_type": "payment_screenshot"
+  }
+]

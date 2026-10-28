@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Expense Capture",
+    "slug": "ope-expense-capture",
+    "version": "1.0.0",
+    "scheme": "ope",
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

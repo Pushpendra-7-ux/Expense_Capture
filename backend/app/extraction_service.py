@@ -131,7 +131,13 @@ CONTEXT & RULES:
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY is not configured.")
 
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(
+                timeout=12000,
+                retry_options=types.HttpRetryOptions(attempts=1),
+            ),
+        )
         today_str = get_today_kolkata_str()
         system_instruction = self.build_system_prompt(today_str)
 
@@ -152,6 +158,8 @@ CONTEXT & RULES:
 
         contents.append(prompt_text)
 
+        active_model = model_name or settings.GEMINI_MODEL
+
         config_kwargs: dict[str, Any] = {
             "temperature": 0.0,
             "response_mime_type": "application/json",
@@ -160,14 +168,13 @@ CONTEXT & RULES:
             "media_resolution": "media_resolution_high",
         }
 
-        # Thinking config for Gemini 3 Flash
-        if thinking_level in {"low", "medium", "high"}:
+        # Thinking config for Gemini 3.8 Flash
+        if thinking_level in {"low", "medium", "high"} and "3.8" in active_model:
             config_kwargs["thinking_config"] = types.ThinkingConfig(
                 thinking_level=thinking_level
             )
 
         config = types.GenerateContentConfig(**config_kwargs)
-        active_model = model_name or settings.GEMINI_MODEL
 
         # Concurrency control
         async with self.semaphore:
@@ -231,13 +238,16 @@ CONTEXT & RULES:
                 notices=["Gemini API key not configured. Please fill in details manually."],
             )
 
-        # 2. Call Gemini with Retries and Total Budget
+        # 2. Call Gemini with Retries, Model Fallbacks, and Total Budget
         extracted_data: GeminiReceiptExtraction | None = None
         last_error: Exception | None = None
 
-        # Retry loop: 1 initial call + 1 retry on 429/5xx or schema repair
-        max_attempts = 2
-        for attempt in range(1, max_attempts + 1):
+        candidate_models = [settings.GEMINI_MODEL]
+        for fallback_m in ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash"]:
+            if fallback_m not in candidate_models:
+                candidate_models.append(fallback_m)
+
+        for attempt, attempt_model in enumerate(candidate_models, start=1):
             remaining_budget = TOTAL_BUDGET_SECONDS - (time.monotonic() - start_time)
             if remaining_budget <= 2.0:
                 logger.warning("Extraction budget expired (%0.1fs remaining)", remaining_budget)
@@ -246,12 +256,10 @@ CONTEXT & RULES:
             try:
                 repair_prompt = (
                     "Previous output was invalid. Please strictly output JSON matching the schema."
-                    if attempt > 1 and last_error
+                    if attempt > 1 and last_error and not ("503" in str(last_error) or "429" in str(last_error))
                     else None
                 )
-                attempt_model = (
-                    settings.GEMINI_MODEL if attempt == 1 else "gemini-3.6-flash"
-                )
+                logger.info("Calling Gemini with model %s (attempt %d)", attempt_model, attempt)
                 extracted_data = await self._call_gemini_api(
                     files_data=files_data,
                     note=note,
@@ -259,18 +267,18 @@ CONTEXT & RULES:
                     thinking_level=thinking_level,
                     model_name=attempt_model,
                 )
+                logger.info("Gemini extraction succeeded with %s in %0.2fs", attempt_model, time.monotonic() - start_time)
                 break  # Success
             except (asyncio.TimeoutError, TimeoutError) as e:
-                logger.warning("Gemini call timed out on attempt %d: %s", attempt, str(e))
+                logger.warning("Gemini call timed out with model %s on attempt %d: %s", attempt_model, attempt, str(e))
                 last_error = e
             except Exception as e:
                 err_str = str(e).lower()
-                logger.warning("Gemini extraction error on attempt %d: %s", attempt, str(e))
+                logger.warning("Gemini extraction error with %s on attempt %d: %s", attempt_model, attempt, str(e))
                 last_error = e
 
-                # Check for rate limit (429) or server error (503/500)
-                if ("429" in err_str or "resource_exhausted" in err_str or "503" in err_str or "500" in err_str) and attempt < max_attempts:
-                    await asyncio.sleep(2.0)
+                # On 503 / 429 / resource exhausted, immediately try next candidate model
+                if "503" in err_str or "429" in err_str or "resource_exhausted" in err_str:
                     continue
 
         # If extraction failed or timed out, return failed draft

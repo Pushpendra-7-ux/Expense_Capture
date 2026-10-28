@@ -8,6 +8,7 @@ import {
   ScrollView,
   useWindowDimensions,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -324,6 +325,7 @@ export default function HomeScreen() {
   const containerMaxWidth = width > 460 ? 420 : width;
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [expenses, setExpenses] = useState<DisplayExpense[]>([]);
   const [serverBanner, setServerBanner] = useState(false);
@@ -392,6 +394,23 @@ export default function HomeScreen() {
     };
   }, []);
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const data = await fetchExpenses(null, 15);
+      if (data.items && data.items.length > 0) {
+        setExpenses(data.items.map(mapRecord));
+        setNextCursor(data.next_cursor);
+        setHasMore(data.has_more);
+        setTotalCount(data.total_count);
+      }
+    } catch {
+      // Keep existing data on error
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleLoadMore = async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
@@ -418,6 +437,14 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.colors.indigo]}
+            tintColor={theme.colors.indigo}
+          />
+        }
       >
         <View style={[styles.container, { maxWidth: containerMaxWidth }]}>
           {/* ── Header ────────────────────────────────────── */}

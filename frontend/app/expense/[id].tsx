@@ -18,6 +18,109 @@ import { fetchExpenseById, ExpenseRecord, CATEGORY_OPTIONS, API_BASE_URL } from 
 import { formatINR, formatTime } from '../../utils/format';
 import { PDFCard } from '../../components/PDFCard';
 
+const FALLBACK_EXPENSES: ExpenseRecord[] = [
+  {
+    id: 'a1b2c3d4-0001-4000-a000-000000000001',
+    reference_id: 'OPE-A7K291',
+    user_id: 'd290f1ee-6c54-4b01-90e6-d701748f0851',
+    amount_minor: 6840,
+    currency: 'INR',
+    expense_date: '2024-10-03',
+    merchant: 'Uber India',
+    category: 'cab_local_transport',
+    category_label: 'Cab & local transport',
+    reason: 'Cab to client office for project kickoff meeting',
+    receipt_type: 'payment_screenshot',
+    txn_ref: 'UBER-9A8F3D',
+    invoice_no: null,
+    tax_amount_minor: null,
+    extraction_status: 'ok',
+    possible_duplicate: false,
+    created_at: '2024-10-03T10:15:00Z',
+    attachment_count: 0,
+  },
+  {
+    id: 'a1b2c3d4-0002-4000-a000-000000000002',
+    reference_id: 'OPE-B3M472',
+    user_id: 'd290f1ee-6c54-4b01-90e6-d701748f0851',
+    amount_minor: 15200,
+    currency: 'INR',
+    expense_date: '2024-10-05',
+    merchant: 'Ola Cabs',
+    category: 'cab_local_transport',
+    category_label: 'Cab & local transport',
+    reason: 'Airport pickup — Bengaluru domestic terminal',
+    receipt_type: 'payment_screenshot',
+    txn_ref: 'OLA-X22K91',
+    invoice_no: null,
+    tax_amount_minor: null,
+    extraction_status: 'ok',
+    possible_duplicate: false,
+    created_at: '2024-10-05T08:30:00Z',
+    attachment_count: 0,
+  },
+  {
+    id: 'a1b2c3d4-0003-4000-a000-000000000003',
+    reference_id: 'OPE-C9T583',
+    user_id: 'd290f1ee-6c54-4b01-90e6-d701748f0851',
+    amount_minor: 43500,
+    currency: 'INR',
+    expense_date: '2024-10-08',
+    merchant: 'Swiggy',
+    category: 'team_meals',
+    category_label: 'Team meals',
+    reason: 'Team lunch ordered via Swiggy for sprint retro',
+    receipt_type: 'bill_photo',
+    txn_ref: null,
+    invoice_no: 'SWG-2024-78431',
+    tax_amount_minor: 7830,
+    extraction_status: 'ok',
+    possible_duplicate: false,
+    created_at: '2024-10-08T13:00:00Z',
+    attachment_count: 0,
+  },
+  {
+    id: 'a1b2c3d4-0004-4000-a000-000000000004',
+    reference_id: 'OPE-D1W694',
+    user_id: 'd290f1ee-6c54-4b01-90e6-d701748f0851',
+    amount_minor: 32000,
+    currency: 'INR',
+    expense_date: '2024-10-11',
+    merchant: 'Blue Tokai Coffee',
+    category: 'client_meals_entertainment',
+    category_label: 'Client meals & entertainment',
+    reason: 'Coffee meeting with client stakeholders at Blue Tokai, Koramangala',
+    receipt_type: 'bill_photo',
+    txn_ref: null,
+    invoice_no: 'BTC-10-0219',
+    tax_amount_minor: 5760,
+    extraction_status: 'ok',
+    possible_duplicate: false,
+    created_at: '2024-10-11T16:45:00Z',
+    attachment_count: 0,
+  },
+  {
+    id: 'a1b2c3d4-0005-4000-a000-000000000005',
+    reference_id: 'OPE-E5X705',
+    user_id: 'd290f1ee-6c54-4b01-90e6-d701748f0851',
+    amount_minor: 875000,
+    currency: 'INR',
+    expense_date: '2024-10-14',
+    merchant: 'Taj Hotel',
+    category: 'travel',
+    category_label: 'Travel (flights/train/hotel)',
+    reason: 'Hotel stay for 2-day client workshop in Mumbai',
+    receipt_type: 'bill_photo',
+    txn_ref: null,
+    invoice_no: 'TAJ-MUM-20241014-882',
+    tax_amount_minor: 157500,
+    extraction_status: 'manual',
+    possible_duplicate: false,
+    created_at: '2024-10-14T09:00:00Z',
+    attachment_count: 0,
+  },
+];
+
 export default function ExpenseDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
@@ -37,8 +140,17 @@ export default function ExpenseDetailScreen() {
         setLoading(false);
       })
       .catch((err) => {
-        // If not found in API, check if it's one of the seed items
-        setError(err.message || 'Expense could not be loaded');
+        // Fallback check against seed sample items if backend is slow/offline
+        const match = FALLBACK_EXPENSES.find(
+          (f) =>
+            f.id.toLowerCase() === params.id.toLowerCase() ||
+            f.reference_id.toLowerCase() === params.id.toLowerCase()
+        );
+        if (match) {
+          setExpense(match);
+        } else {
+          setError(err.message || 'Expense could not be loaded');
+        }
         setLoading(false);
       });
   }, [params.id]);

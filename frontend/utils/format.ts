@@ -63,6 +63,15 @@ export function formatDate(date: Date): string {
   if (diffDays === 0) return 'Today';
   if (diffDays === 1) return 'Yesterday';
 
+  if (target.getFullYear() !== today.getFullYear()) {
+    return date.toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'Asia/Kolkata',
+    });
+  }
+
   return date.toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'short',

@@ -160,16 +160,16 @@ class ExpenseResponse(BaseModel):
     amount_minor: int
     currency: str
     expense_date: date
-    merchant: str | None
+    merchant: str | None = None
     category: Category
     category_label: str = ""
     reason: str
     receipt_type: ReceiptType
-    txn_ref: str | None
-    invoice_no: str | None
-    tax_amount_minor: int | None
+    txn_ref: str | None = None
+    invoice_no: str | None = None
+    tax_amount_minor: int | None = None
     extraction_status: ExtractionStatus
-    possible_duplicate: bool
+    possible_duplicate: bool = False
     created_at: datetime
     attachment_count: int = 0
     attachments: list[AttachmentInfo] = Field(default_factory=list)

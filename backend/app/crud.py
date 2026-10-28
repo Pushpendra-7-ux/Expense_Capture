@@ -228,7 +228,7 @@ async def list_expenses(
         except Exception:
             pass
 
-    query = query.order_by(Expense.created_at.desc()).limit(limit + 1)
+    query = query.order_by(Expense.created_at.desc(), Expense.id.desc()).limit(limit + 1)
     result = await session.execute(query)
     rows = result.scalars().all()
 

@@ -40,6 +40,7 @@ export interface ExpensePayload {
   tax_amount_minor?: number | null;
   extraction_status?: 'ok' | 'partial' | 'failed' | 'manual';
   attachment_ids?: string[];
+  edited_fields?: string[];
 }
 
 export interface ExpenseRecord {

@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { theme } from '../theme';
@@ -20,6 +20,7 @@ import { PDFCard } from '../components/PDFCard';
 
 export default function SnapBillScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const containerMaxWidth = width > 460 ? 420 : width;
 
@@ -78,7 +79,38 @@ export default function SnapBillScreen() {
 
     try {
       const rawFiles = files.map((f) => f.file);
-      const draft = await extractExpense(rawFiles);
+      let draft;
+      try {
+        draft = await extractExpense(rawFiles);
+      } catch (extractErr: any) {
+        // Fallback per spec: AI unavailable -> open manual form with files attached
+        try {
+          const uploaded = await uploadAttachmentFiles(rawFiles, 'bill');
+          draft = {
+            status: 'failed' as const,
+            fields: {
+              amount_minor: null,
+              amount_rupees: '',
+              expense_date: '',
+              merchant: '',
+              category: 'other' as const,
+              reason: '',
+              receipt_type: 'bill_photo' as const,
+              txn_ref: null,
+              invoice_no: null,
+              tax_amount_minor: null,
+            },
+            confidence: { amount: 0, date: 0.5, merchant: 0, category: 0, reason: 0 },
+            notices: ['AI extraction unavailable. Please enter expense details manually.'],
+            conflicts: [],
+            attachment_ids: uploaded.map((u) => u.id),
+            receipt_type: 'bill_photo' as const,
+          };
+        } catch {
+          // If server upload also fails, let user know
+          throw extractErr;
+        }
+      }
 
       // Navigate to review form with prefilled extracted draft
       router.push({
@@ -98,7 +130,7 @@ export default function SnapBillScreen() {
       });
     } catch (err: any) {
       setErrorMessage(
-        err.message || 'Could not extract bill. Please try again or fill in manually.'
+        err.message || 'Could not process bill. Please try again or fill in manually.'
       );
     } finally {
       setUploading(false);
@@ -147,7 +179,10 @@ export default function SnapBillScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 110 + insets.bottom },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.container, { maxWidth: containerMaxWidth }]}>
@@ -305,7 +340,12 @@ export default function SnapBillScreen() {
 
       {/* ── Sticky Bottom Continue Bar ──────────────────── */}
       {files.length > 0 && (
-        <View style={styles.bottomBar}>
+        <View
+          style={[
+            styles.bottomBar,
+            { paddingBottom: Math.max(insets.bottom, 16) },
+          ]}
+        >
           <View style={[styles.bottomBarInner, { maxWidth: containerMaxWidth }]}>
             <Pressable
               onPress={handleContinue}
@@ -349,8 +389,8 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.borderLight,
   },
   backBtn: {
-    width: 40,
-    height: 40,
+    minWidth: 48,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -488,17 +528,23 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   removeBtn: {
+    minWidth: 48,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 6,
   },
   addMoreChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     alignSelf: 'flex-start',
-    gap: 4,
+    gap: 6,
     backgroundColor: theme.colors.indigoBg,
     borderRadius: theme.radii.full,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 8,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: 10,
+    minHeight: 48,
     marginTop: 4,
   },
   addMoreText: {

@@ -10,7 +10,7 @@ import {
   Image,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { theme } from '../../theme';
@@ -123,6 +123,7 @@ const FALLBACK_EXPENSES: ExpenseRecord[] = [
 
 export default function ExpenseDetailScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id: string }>();
   const { width } = useWindowDimensions();
   const containerMaxWidth = width > 460 ? 420 : width;
@@ -192,7 +193,10 @@ export default function ExpenseDetailScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 40 + insets.bottom },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.container, { maxWidth: containerMaxWidth }]}>
@@ -360,8 +364,8 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.borderLight,
   },
   backBtn: {
-    width: 44,
-    height: 44,
+    minWidth: 48,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -423,6 +427,9 @@ const styles = StyleSheet.create({
     borderRadius: theme.radii.md,
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.md,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   returnBtnText: {
     fontFamily: theme.typography.fontFamily,

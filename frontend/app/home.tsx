@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -321,6 +321,7 @@ function ActionCard({
 // ─── Home Screen ───────────────────────────────────────────────────────
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const containerMaxWidth = width > 460 ? 420 : width;
 
@@ -435,7 +436,10 @@ export default function HomeScreen() {
       <ServerBanner visible={serverBanner} />
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 110 + insets.bottom },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -554,7 +558,11 @@ export default function HomeScreen() {
       {/* ── Floating Action Button (+) ──────────────────── */}
       <Pressable
         onPress={() => router.push('/snap')}
-        style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.95 }] }]}
+        style={({ pressed }) => [
+          styles.fab,
+          { bottom: 24 + insets.bottom },
+          pressed && { transform: [{ scale: 0.95 }] },
+        ]}
         accessibilityLabel="Log new expense"
       >
         <Ionicons name="add" size={28} color={theme.colors.white} />
@@ -592,7 +600,8 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
   },
   backButton: {
-    padding: theme.spacing.xs,
+    minWidth: 48,
+    minHeight: 48,
     marginLeft: -theme.spacing.xs,
     justifyContent: 'center',
     alignItems: 'center',
@@ -809,7 +818,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: theme.spacing.lg,
+    minHeight: 48,
+    paddingVertical: theme.spacing.md,
     gap: theme.spacing.xs,
   },
   loadMoreText: {

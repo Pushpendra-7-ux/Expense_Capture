@@ -1,4 +1,4 @@
-import React, { useState, useId } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { theme } from '../theme';
@@ -44,6 +44,7 @@ function toYYYYMMDD(d: Date): string {
 
 export default function ReviewScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     receiptType?: 'bill_photo' | 'payment_screenshot' | 'none';
     amount?: string;
@@ -144,6 +145,24 @@ export default function ReviewScreen() {
   const [duplicateWarning, setDuplicateWarning] = useState<boolean>(false);
   const [idempotencyKey] = useState<string>(() => generateIdempotencyKey());
 
+  // In-progress draft persistence in local state / sessionStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        const draft = {
+          amountStr,
+          expenseDate,
+          merchant,
+          category,
+          reason,
+          receiptType,
+          attachmentIds,
+        };
+        window.sessionStorage.setItem('ope_active_draft', JSON.stringify(draft));
+      } catch {}
+    }
+  }, [amountStr, expenseDate, merchant, category, reason, receiptType, attachmentIds]);
+
   // Convert amount string to integer paise
   const parsedPaise = Math.round((parseFloat(amountStr) || 0) * 100);
 
@@ -194,6 +213,8 @@ export default function ReviewScreen() {
   };
 
   const handleSubmit = async (forceSubmitDuplicate: boolean = false) => {
+    if (submitting) return; // Prevent double-tap submit
+
     const error = validateForm();
     if (error) {
       setErrorMessage(error);
@@ -213,6 +234,7 @@ export default function ReviewScreen() {
         receipt_type: receiptType,
         extraction_status: confidence.amount !== undefined ? 'ok' : 'manual',
         attachment_ids: attachmentIds,
+        edited_fields: Array.from(editedFields),
       };
 
       const result = await submitExpense(payload, idempotencyKey);
@@ -222,6 +244,13 @@ export default function ReviewScreen() {
         setDuplicateWarning(true);
         setSubmitting(false);
         return;
+      }
+
+      // Clear persisted draft on successful submit
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        try {
+          window.sessionStorage.removeItem('ope_active_draft');
+        } catch {}
       }
 
       // Navigate to confirmation screen
@@ -234,7 +263,9 @@ export default function ReviewScreen() {
         },
       });
     } catch (err: any) {
-      setErrorMessage(err.detail || err.message || 'Failed to submit expense. Please try again.');
+      setErrorMessage(
+        err.detail || err.message || 'Failed to submit expense. Please check your connection and tap Retry.'
+      );
       setSubmitting(false);
     }
   };
@@ -263,7 +294,10 @@ export default function ReviewScreen() {
         </View>
 
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: 110 + insets.bottom },
+          ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -273,6 +307,17 @@ export default function ReviewScreen() {
               <View style={styles.errorBanner}>
                 <Ionicons name="alert-circle" size={18} color={theme.colors.error} />
                 <Text style={styles.errorText}>{errorMessage}</Text>
+                <Pressable
+                  onPress={() => handleSubmit(duplicateWarning)}
+                  style={({ pressed }) => [
+                    styles.retryBtn,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  hitSlop={8}
+                  accessibilityLabel="Retry submit"
+                >
+                  <Text style={styles.retryBtnText}>Retry</Text>
+                </Pressable>
               </View>
             )}
 
@@ -544,7 +589,12 @@ export default function ReviewScreen() {
         </ScrollView>
 
         {/* ── Sticky Bottom Submit Bar ────────────────────── */}
-        <View style={styles.bottomBar}>
+        <View
+          style={[
+            styles.bottomBar,
+            { paddingBottom: Math.max(insets.bottom, 16) },
+          ]}
+        >
           <View style={[styles.bottomBarInner, { maxWidth: containerMaxWidth }]}>
             <Pressable
               onPress={() => handleSubmit(false)}
@@ -587,8 +637,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.bgPrimary,
   },
   backBtn: {
-    width: 44,
-    height: 44,
+    minWidth: 48,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -633,6 +683,21 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '500',
   },
+  retryBtn: {
+    backgroundColor: theme.colors.error,
+    borderRadius: theme.radii.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 6,
+    minHeight: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  retryBtnText: {
+    fontFamily: theme.typography.fontFamily,
+    fontSize: 12,
+    fontWeight: '700',
+    color: theme.colors.white,
+  },
 
   // Duplicate Warning Banner
   duplicateBanner: {
@@ -665,7 +730,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.amber,
     borderRadius: theme.radii.sm,
     paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
     alignSelf: 'flex-start',
   },
   submitAnywayText: {
@@ -821,10 +889,13 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
   },
   todayBtn: {
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
     borderRadius: theme.radii.sm,
     backgroundColor: theme.colors.bgSecondary,
+    minHeight: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   todayBtnText: {
     fontFamily: theme.typography.fontFamily,
@@ -844,12 +915,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: theme.radii.full,
     borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.bgSecondary,
-    minHeight: 44,
+    minHeight: 48,
   },
   chipSelected: {
     backgroundColor: theme.colors.navy,

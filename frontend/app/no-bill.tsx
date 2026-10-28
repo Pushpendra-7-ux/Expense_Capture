@@ -13,7 +13,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { theme } from '../theme';
@@ -27,6 +27,7 @@ interface TaggedFile extends ProcessedFile {
 
 export default function NoBillScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const containerMaxWidth = width > 460 ? 420 : width;
 
@@ -90,11 +91,43 @@ export default function NoBillScreen() {
     setUploading(true);
     setErrorMessage(null);
 
+    const hasProof = files.some((f) => f.slot === 'proof');
+
     try {
       const rawFiles = files.map((f) => f.file);
-      const draft = await extractExpense(rawFiles, note.trim() || undefined);
-
-      const hasProof = files.some((f) => f.slot === 'proof');
+      let draft;
+      try {
+        draft = await extractExpense(rawFiles, note.trim() || undefined);
+      } catch (extractErr: any) {
+        // Fallback per spec: if extraction fails, keep files and route to manual form
+        try {
+          const uploaded = rawFiles.length > 0
+            ? await uploadAttachmentFiles(rawFiles, hasProof ? 'payment_screenshot' : 'supporting')
+            : [];
+          draft = {
+            status: 'failed' as const,
+            fields: {
+              amount_minor: null,
+              amount_rupees: '',
+              expense_date: '',
+              merchant: '',
+              category: 'other' as const,
+              reason: note.trim() || '',
+              receipt_type: hasProof ? ('payment_screenshot' as const) : ('none' as const),
+              txn_ref: null,
+              invoice_no: null,
+              tax_amount_minor: null,
+            },
+            confidence: { amount: 0, date: 0.5, merchant: 0, category: 0, reason: 0 },
+            notices: ['AI extraction unavailable. Please enter details manually.'],
+            conflicts: [],
+            attachment_ids: uploaded.map((u) => u.id),
+            receipt_type: hasProof ? ('payment_screenshot' as const) : ('none' as const),
+          };
+        } catch {
+          throw extractErr;
+        }
+      }
 
       router.push({
         pathname: '/review',
@@ -122,11 +155,24 @@ export default function NoBillScreen() {
     }
   };
 
-  const handleFillMyself = () => {
+  const handleFillMyself = async () => {
+    const hasProof = files.some((f) => f.slot === 'proof');
+    let attIds: string[] = [];
+    if (files.length > 0) {
+      try {
+        const uploaded = await uploadAttachmentFiles(
+          files.map((f) => f.file),
+          hasProof ? 'payment_screenshot' : 'supporting'
+        );
+        attIds = uploaded.map((u) => u.id);
+      } catch {}
+    }
     router.push({
       pathname: '/review',
       params: {
-        receiptType: 'none',
+        receiptType: hasProof ? 'payment_screenshot' : 'none',
+        reason: note.trim() || '',
+        attachmentIds: JSON.stringify(attIds),
       },
     });
   };
@@ -170,7 +216,10 @@ export default function NoBillScreen() {
         </View>
 
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: 110 + insets.bottom },
+          ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -359,7 +408,12 @@ export default function NoBillScreen() {
         </ScrollView>
 
         {/* ── Sticky Bottom Continue Bar ──────────────────── */}
-        <View style={styles.bottomBar}>
+        <View
+          style={[
+            styles.bottomBar,
+            { paddingBottom: Math.max(insets.bottom, 16) },
+          ]}
+        >
           <View style={[styles.bottomBarInner, { maxWidth: containerMaxWidth }]}>
             <Pressable
               onPress={handleContinue}
@@ -401,8 +455,8 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.borderLight,
   },
   backBtn: {
-    width: 40,
-    height: 40,
+    minWidth: 48,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -523,6 +577,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   thumbRemove: {
+    minWidth: 48,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 6,
   },
   slotUploadCard: {
@@ -575,6 +633,8 @@ const styles = StyleSheet.create({
   // Fill myself link
   fillMyselfBtn: {
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
     paddingVertical: theme.spacing.md,
     marginBottom: theme.spacing.lg,
   },

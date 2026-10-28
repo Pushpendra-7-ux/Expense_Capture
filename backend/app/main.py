@@ -304,15 +304,6 @@ async def extract_expense(
     - Verifies amounts, dates, and cross-checks code-side
     - Always returns HTTP 200 with draft object (never blocks manual entry)
     """
-    # Rate limit check
-    client_ip = get_client_ip(request)
-    allowed, err_msg = await check_and_increment_rate_limits(db, client_ip)
-    if not allowed:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=err_msg or "Rate limit exceeded. Please wait a bit.",
-        )
-
     clean_note = note.strip() if note else None
     if not files and not clean_note:
         raise HTTPException(
@@ -355,6 +346,16 @@ async def extract_expense(
         validated_files_data.append((validated.file_bytes, validated.mime))
 
     await db.commit()
+
+    # Rate limit check (Postgres-backed per-IP and global daily cap)
+    # Per spec: Beyond a limit, return a normal "failed" draft with attachments so manual entry works
+    client_ip = get_client_ip(request)
+    allowed, err_msg = await check_and_increment_rate_limits(db, client_ip)
+    if not allowed:
+        return extraction_service._create_failed_draft(
+            saved_attachment_ids,
+            [err_msg or "AI extraction limit reached. Please fill in details manually."],
+        )
 
     # Call extraction service
     draft = await extraction_service.extract(

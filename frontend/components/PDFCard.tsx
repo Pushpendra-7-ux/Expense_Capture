@@ -113,8 +113,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 6,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 10,
+    minHeight: 44,
     borderRadius: theme.radii.sm,
     backgroundColor: theme.colors.bgSecondary,
   },
@@ -125,6 +126,10 @@ const styles = StyleSheet.create({
     color: theme.colors.indigo,
   },
   removeBtn: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 4,
   },
 });

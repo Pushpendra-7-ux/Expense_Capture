@@ -68,6 +68,7 @@ async def check_duplicate(
     Check if a matching expense exists:
     - txn_ref matches (if non-null)
     - OR (merchant + amount_minor + expense_date) match for this user
+    - OR any attachment sha256 matches an already submitted attachment for this user
     """
     clauses = []
 
@@ -86,12 +87,35 @@ async def check_duplicate(
             & (Expense.expense_date == payload.expense_date)
         )
 
-    if not clauses:
-        return False
+    if clauses:
+        query = select(Expense.id).where(or_(*clauses)).limit(1)
+        result = await session.execute(query)
+        if result.scalar_one_or_none() is not None:
+            return True
 
-    query = select(Expense.id).where(or_(*clauses)).limit(1)
-    result = await session.execute(query)
-    return result.scalar_one_or_none() is not None
+    # 3. Attachment sha256 match if attachment_ids provided
+    if payload.attachment_ids:
+        candidate_hashes_result = await session.execute(
+            select(ExpenseAttachment.sha256).where(
+                ExpenseAttachment.id.in_(payload.attachment_ids)
+            )
+        )
+        hashes = [h for h in candidate_hashes_result.scalars().all() if h]
+        if hashes:
+            existing_match = await session.execute(
+                select(ExpenseAttachment.id)
+                .join(Expense, Expense.id == ExpenseAttachment.expense_id)
+                .where(
+                    (Expense.user_id == user_id)
+                    & (ExpenseAttachment.sha256.in_(hashes))
+                    & (ExpenseAttachment.expense_id.isnot(None))
+                )
+                .limit(1)
+            )
+            if existing_match.scalar_one_or_none() is not None:
+                return True
+
+    return False
 
 
 async def create_expense(

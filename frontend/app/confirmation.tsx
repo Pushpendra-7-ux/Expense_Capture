@@ -7,7 +7,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { theme } from '../theme';
@@ -15,6 +15,7 @@ import { formatINR } from '../utils/format';
 
 export default function ConfirmationScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const containerMaxWidth = width > 460 ? 420 : width;
 
@@ -78,15 +79,16 @@ export default function ConfirmationScreen() {
           </View>
 
           {/* ── Action Buttons ────────────────────────────── */}
-          <View style={styles.actionSection}>
+          <View style={[styles.actionSection, { paddingBottom: insets.bottom }]}>
             <Pressable
-              onPress={() => router.replace('/review')}
+              onPress={() => router.replace('/snap')}
               style={({ pressed }) => [
                 styles.primaryBtn,
                 pressed && { opacity: 0.9 },
               ]}
+              accessibilityLabel="Log another expense"
             >
-              <Ionicons name="add" size={20} color={theme.colors.white} />
+              <Ionicons name="camera-outline" size={20} color={theme.colors.white} />
               <Text style={styles.primaryBtnText}>Log another</Text>
             </Pressable>
 
@@ -96,6 +98,7 @@ export default function ConfirmationScreen() {
                 styles.secondaryBtn,
                 pressed && { opacity: 0.8 },
               ]}
+              accessibilityLabel="View my expenses"
             >
               <Text style={styles.secondaryBtnText}>View my expenses</Text>
             </Pressable>

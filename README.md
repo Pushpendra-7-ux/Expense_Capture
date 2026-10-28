@@ -136,9 +136,9 @@ The application will open at `http://localhost:8081`.
 
 Run the full backend test suite:
 ```bash
-PYTHONPATH=backend python3 -m pytest backend/tests/ -v
+PYTHONPATH=backend backend/.venv/bin/pytest backend/tests/ -v
 ```
-All 35 tests verify:
+All 49 unit tests verify:
 - Exact rupee-to-paise conversion and rounding
 - Positive amount requirement and ₹10,00,000 ceiling enforcement
 - Future date rejection (today and past dates allowed)
@@ -152,7 +152,74 @@ All 35 tests verify:
 - PDF encryption check and max 5-page ceiling
 - Deterministic extraction cache key calculation (sha256 of sorted hashes + normalized note + today IST)
 - Code-side verification: subtotal + tax reconciliation, typed note amount override, foreign currency detection, future date reset, multiple bills warning
-- Safe fallback draft on timeout or budget expiry (never blocking user manual flow)
+- Safe fallback draft on timeout, budget expiry, or rate limits (never blocking manual user flow)
+- Duplicate detection by transaction reference (`txn_ref`), `(merchant + amount + date)` tuple, and attachment `sha256` hash
+- Trusted proxy IP extraction (`X-Forwarded-For` when `TRUSTED_PROXY=true`, socket IP when `false`)
+- Audit field tracking (`edited_fields` list)
+
+---
+
+## 📊 Running Extraction Evaluation
+
+Run the evaluation script to test live Gemini extraction against sample bills:
+```bash
+# Low thinking level (fast structured extraction)
+PYTHONPATH=backend backend/.venv/bin/python3 backend/scripts/eval_extraction.py --thinking low
+
+# High thinking level (deep extraction for ambiguous receipts)
+PYTHONPATH=backend backend/.venv/bin/python3 backend/scripts/eval_extraction.py --thinking high
+
+# Custom model override
+PYTHONPATH=backend backend/.venv/bin/python3 backend/scripts/eval_extraction.py --model gemini-3.6-flash --thinking low
+```
+The script reads synthetic sample receipts from `samples/` against ground truth in `samples/expected.json` and outputs:
+- Per-field accuracy (exact for amount and date, normalized fuzzy match for merchant)
+- Latency (p50, p95)
+- Success / failure breakdown and token counts
+
+---
+
+## 🚀 Deployment Guide
+
+### 1. Backend + PostgreSQL (Render / Railway / Fly.io / Cloud Run)
+- **Database**: Provision PostgreSQL 16 (or higher). Set `DATABASE_URL` in environment.
+- **Run migrations**:
+  ```bash
+  alembic upgrade head
+  ```
+- **Start command**:
+  ```bash
+  uvicorn app.main:app --host 0.0.0.0 --port 8000
+  ```
+- **Configure environment**: Set `GEMINI_API_KEY`, `FRONTEND_ORIGINS`, `TRUSTED_PROXY=true` (when behind reverse proxy / load balancer).
+
+### 2. Frontend Static Web Build (Vercel / Netlify / Cloudflare Pages / S3)
+- **Build command**:
+  ```bash
+  cd frontend
+  EXPO_PUBLIC_API_URL=https://your-backend-api.com npm run build:web
+  ```
+- **Output directory**: `frontend/dist`
+- The static files can be served directly by any web server or static CDN.
+
+---
+
+## ❄️ Free-Tier Cold-Starts & Storage Limits
+
+- **Free-Tier Cold Starts**: Free hosting platforms (Render, Railway, Fly.io free tiers) put inactive containers to sleep. On initial load, the frontend initiates a `/health` probe. If the server takes over 3 seconds to respond, an animated top banner notifies the user: *"Waking up the server…"*.
+- **PostgreSQL 0.5 GB Free Tier Storage Limit**:
+  - Image attachments are compressed client-side (max 1600px long edge, JPEG quality 0.85) before upload.
+  - PDF uploads are capped at 10 MB and max 5 pages.
+  - An automated 24-hour cleanup job runs on backend startup and during extraction sweeps, deleting unattached orphan files (`expense_id IS NULL AND created_at < NOW() - INTERVAL '24 hours'`).
+
+---
+
+## ⚠️ Known Limitations
+
+1. **Unauthenticated Prototype**: Per specification, there is no login/auth logic. All submissions are tied to a single seeded user (`Pushpendra Suryawanshi`).
+2. **Rate Limits on Public Endpoint**: To protect against abuse on public unauthenticated endpoints, `/expenses/extract` enforces a 20 request/hour per-IP limit and a 300 extraction/day global cap stored in PostgreSQL. When exceeded, the app returns a graceful fallback draft so users can always enter expenses manually.
+3. **Free-Tier Gemini Model Availability**: `gemini-3.8-flash` free-tier keys experience occasional 503 high-demand spikes. The extraction pipeline incorporates automatic fallback to `gemini-3.6-flash`.
+4. **Single-Purpose Scope**: Designed strictly for out-of-pocket field expenses in ~30 seconds. No multi-currency conversion, approval workflows, or post-submission edits.
 
 ---
 
@@ -195,6 +262,17 @@ All 35 tests verify:
    - **Code-Side Verification**: Integer paise conversion, subtotal + tax reconciliation, typed note amount override, foreign currency notices, future date reset, multiple distinct bills detection.
    - **Graceful Fallback**: Returns draft object even on timeout/budget expiry with status `failed` so user is never blocked from filing manually.
    - **Evaluation Script (`backend/scripts/eval_extraction.py`)**: Runs sample receipts comparing accuracy and timing with `--thinking low/high`.
+5. **Phase 5 — Feed Polish, Cursor Pagination & Abuse Protection**:
+   - **Deterministic Cursor-Based Pagination**: Cursor encoding `(created_at desc, id desc)` supporting forward paging through unlimited records.
+   - **Pull to Refresh**: Native `RefreshControl` integrating seamless manual re-fetching on the feed.
+   - **Duplicate Detection**: Three-layer duplicate warning engine checking `txn_ref`, `(user_id, merchant, amount_minor, expense_date)`, and attachment `sha256` hash.
+   - **Sentinels & Proxy IP Handling**: `TRUSTED_PROXY=true` reading `X-Forwarded-For` client IP, falling back to socket IP.
+6. **Phase 6 — Mobile Polish, Accessibility & Production Edge Cases**:
+   - **48 px Minimum Tap Targets**: Enforced on all interactive elements across all screens (back buttons, category chips, picker cards, remove actions, pagination buttons).
+   - **Safe Areas**: `useSafeAreaInsets` integrated across sticky bottom action bars, FAB, and scroll views, preventing notch or navigation bar collision.
+   - **Zero Horizontal Scroll**: Guaranteed fluid responsive layout from 320px/360px up to 420px max-width centered desktop container with global box-sizing and `overflow-x: hidden`.
+   - **Local Draft Resilience & One-Tap Retry**: Active review form persists to session storage across refreshes; network submission errors feature immediate one-tap retry without lost input.
+   - **Audit Field Tracking**: `edited_fields` audit array tracked when AI pre-filled fields are altered by the user before submitting.
 
 ---
 

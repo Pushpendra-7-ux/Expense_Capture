@@ -119,6 +119,7 @@ CONTEXT & RULES:
         note: str | None,
         repair_instruction: str | None = None,
         thinking_level: str = "low",
+        model_name: str | None = None,
     ) -> GeminiReceiptExtraction:
         """
         Execute call to Gemini Flash using google-genai SDK.
@@ -166,6 +167,7 @@ CONTEXT & RULES:
             )
 
         config = types.GenerateContentConfig(**config_kwargs)
+        active_model = model_name or settings.GEMINI_MODEL
 
         # Concurrency control
         async with self.semaphore:
@@ -175,7 +177,7 @@ CONTEXT & RULES:
                 loop.run_in_executor(
                     None,
                     lambda: client.models.generate_content(
-                        model=settings.GEMINI_MODEL,
+                        model=active_model,
                         contents=contents,
                         config=config,
                     ),
@@ -247,11 +249,15 @@ CONTEXT & RULES:
                     if attempt > 1 and last_error
                     else None
                 )
+                attempt_model = (
+                    settings.GEMINI_MODEL if attempt == 1 else "gemini-3.6-flash"
+                )
                 extracted_data = await self._call_gemini_api(
                     files_data=files_data,
                     note=note,
                     repair_instruction=repair_prompt,
                     thinking_level=thinking_level,
+                    model_name=attempt_model,
                 )
                 break  # Success
             except (asyncio.TimeoutError, TimeoutError) as e:

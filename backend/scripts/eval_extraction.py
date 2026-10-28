@@ -24,7 +24,7 @@ from app.extraction_service import extraction_service
 from app.file_validation import validate_file
 
 
-async def run_eval(samples_dir: Path, thinking_level: str) -> None:
+async def run_eval(samples_dir: Path, thinking_level: str, model_name: str | None = None) -> None:
     expected_file = samples_dir / "expected.json"
     if not expected_file.exists():
         print(f"Error: {expected_file} does not exist.")
@@ -33,9 +33,11 @@ async def run_eval(samples_dir: Path, thinking_level: str) -> None:
     with open(expected_file, "r", encoding="utf-8") as f:
         expectations = json.load(f)
 
+    active_model = model_name or settings.GEMINI_MODEL
+
     print(f"\n=======================================================")
     print(f"  Expense Capture (OPE) — Gemini Extraction Eval")
-    print(f"  Model: {settings.GEMINI_MODEL}")
+    print(f"  Model: {active_model}")
     print(f"  Thinking Level: {thinking_level}")
     print(f"  Test Samples: {len(expectations)}")
     print(f"=======================================================\n")
@@ -79,6 +81,7 @@ async def run_eval(samples_dir: Path, thinking_level: str) -> None:
                 files_data=[(val_file.file_bytes, val_file.mime)],
                 note=None,
                 thinking_level=thinking_level,
+                model_name=active_model,
             )
             elapsed = time.monotonic() - start_t
             total_time += elapsed
@@ -143,6 +146,11 @@ def main() -> None:
         help="Thinking level for Gemini 3 Flash (default: low)",
     )
     parser.add_argument(
+        "--model",
+        default=settings.GEMINI_MODEL,
+        help=f"Gemini model ID to evaluate (default: {settings.GEMINI_MODEL})",
+    )
+    parser.add_argument(
         "--samples-dir",
         type=Path,
         default=Path(__file__).resolve().parent.parent.parent / "samples",
@@ -150,7 +158,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    asyncio.run(run_eval(args.samples_dir, args.thinking))
+    asyncio.run(run_eval(args.samples_dir, args.thinking, args.model))
 
 
 if __name__ == "__main__":

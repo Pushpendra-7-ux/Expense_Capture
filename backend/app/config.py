@@ -38,7 +38,11 @@ class Settings(BaseSettings):
         """Split the comma-separated FRONTEND_ORIGINS into a list."""
         return [o.strip() for o in self.FRONTEND_ORIGINS.split(",") if o.strip()]
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": (".env", "backend/.env"),
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 # Module-level singleton — import `settings` wherever needed.

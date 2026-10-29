@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /** Reload when the browser tab becomes active again, so new claims appear. */
 export function useReloadOnFocus(callback: () => void): void {
@@ -20,4 +20,21 @@ export function useReloadOnFocus(callback: () => void): void {
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
+}
+
+/** Keep layout-level React branches in sync with a CSS media query. */
+export function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() =>
+    typeof window === 'undefined' ? false : window.matchMedia(query).matches
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, [query]);
+
+  return matches;
 }

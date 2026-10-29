@@ -2,7 +2,7 @@
 
 Expense Capture (OPE) is a web-first expense capture and review app for Dexter Capital investment bankers. Employees log out-of-pocket expenses in the field in about 30 seconds: snap a bill or upload proof, let Gemini pre-fill the claim, check it, and submit. Finance then reviews every claim in a desktop console, sees the exact stored Gemini reading, and approves, rejects, or requests more information.
 
-There is no login, signup, password, or OTP. A role selector at `/` switches between two client-side workspaces and remembers the choice in `localStorage`. The employee experience is mobile-first and centered on desktop; the finance experience is desktop-first with tables and a dashboard, and remains usable on phones.
+There is no login, signup, password, or OTP. A role selector at `/` switches between two client-side workspaces and remembers the choice in `localStorage`. The employee experience is mobile-first with a responsive desktop composition (persistent sidebar at lg+, KPI dashboard, spending charts, and a filterable expense table) and employee-facing analytics. The finance experience is desktop-first with tables and a dashboard, and remains usable on phones.
 
 ---
 
@@ -22,7 +22,8 @@ There is no login, signup, password, or OTP. A role selector at `/` switches bet
 | Route | Purpose |
 |---|---|
 | `/` | Role selection (Employee / Finance) |
-| `/employee` | Expense feed with month total and category filters |
+| `/employee` | Desktop: greeting, 4 KPIs, spending chart, category breakdown, attention strip, filterable expense table. Mobile: month total hero, category chips, and expense rows |
+| `/employee/analytics` | Period-filtered KPIs, spend trend chart, status breakdown, category breakdown with detail, and CSV export |
 | `/employee/snap` | Camera/file bill capture and AI extraction |
 | `/employee/no-bill` | Payment proof or manual no-receipt claim |
 | `/employee/review` | Editable AI draft and submit |
@@ -71,22 +72,23 @@ Expense_Capture/
     │   ├── context/RoleContext.tsx # Employee/finance role persistence
     │   ├── components/
     │   │   ├── ui/                 # Shared design system
-    │   │   ├── employee/           # Employee layout, file picker, analysis modal
+    │   │   ├── employee/           # Employee layout, sidebar, KPI card, chart tooltip
     │   │   └── finance/            # Finance sidebar/drawer shell
     │   ├── pages/
     │   │   ├── role-select/
-    │   │   ├── employee/
+    │   │   ├── employee/           # Feed/overview, analytics, snap, no-bill, review, detail
     │   │   └── finance/
     │   └── lib/
     │       ├── api.ts              # API client, types, categories, constants
-    │       ├── analytics.ts        # Finance KPI/chart aggregation
+    │       ├── analytics.ts        # Employee + finance KPI/chart aggregation
     │       ├── extraction.ts       # Gemini draft summaries and flags
     │       ├── image.ts            # HEIC conversion and compression
     │       ├── draftStore.ts       # Session draft/confirmation state
     │       ├── fallbackDraft.ts    # Manual draft when AI is unavailable
     │       ├── format.ts           # INR paise, IST dates/times
     │       ├── status.ts           # Status copy and tones
-    │       └── hooks.ts            # Reload-on-focus hook
+    │       ├── cn.ts               # Class name utility
+    │       └── hooks.ts            # Reload-on-focus, media query hooks
     └── package.json
 ```
 
@@ -152,8 +154,12 @@ npm run preview
 
 ## 🧑‍💼 Employee Flow
 
-1. Open `/employee` and see the current month total, pending count, category filters, and recent claims.
-2. **Snap a bill** uses `<input type="file" accept="image/*" capture="environment">` on supported devices, with a gallery/file fallback. Up to three images or PDFs can be attached to one bill.
+1. Open `/employee` to see the workspace overview.
+   - **Mobile** (< 768px): dark hero card with month total and pending count, category filter chips, and a scrollable expense list. Bottom dock has Expenses, Analytics, Snap, and No-bill.
+   - **Tablet** (768–1023px): header tabs replace the bottom dock; content fills the screen.
+   - **Desktop** (≥ 1024px): persistent dark sidebar (workspace info, Overview/Analytics/Snap/No-bill nav, promo card, help modal, profile), breadcrumbs header, greeting with KPI row (total, awaiting review, approved, receipt coverage), attention strip for rejected claims, cumulative spending chart, category breakdown card, and a tabbed/searchable expense table.
+2. **Analytics** at `/employee/analytics` provides period-filtered (this month / last 3 months / all time) KPIs, a daily or monthly spend trend bar chart, claims-by-status breakdown, category breakdown with percentages and averages, and a one-click CSV export.
+3. **Snap a bill** uses `<input type="file" accept="image/*" capture="environment">` on supported devices, with a gallery/file fallback. Up to three images or PDFs can be attached to one bill.
 3. HEIC/HEIF files are converted to JPEG, and images are compressed before upload. PDFs are capped at 10 MB and five pages.
 4. **No bill** lets employees upload a payment screenshot or create a manual claim when nothing is attached.
 5. AI extraction pre-fills amount, date, merchant, category, purpose, tax, reference numbers, and line items. Confidence and verification flags are shown for review.
@@ -304,7 +310,7 @@ The script compares extraction against `samples/expected.json` and reports field
 ## ⚠️ Known Limitations
 
 1. **Unauthenticated prototype**: All claims belong to the single seeded user. The employee/finance switch is client-side, and the review endpoint trusts the supplied reviewer label. Server-side authentication and role enforcement are out of scope.
-2. **Client-side analytics**: Finance metrics aggregate up to 5,000 fetched claims in the browser rather than a dedicated reporting service.
+2. **Client-side analytics**: Both employee and finance analytics aggregate up to 5,000 fetched claims in the browser rather than a dedicated reporting service.
 3. **AI variability**: Free-tier Gemini keys can return 503s or lower-quality reads. The app always falls back to a manual draft, and verification flags ask the employee or reviewer to check uncertain fields.
 4. **Demo data**: The seeded claims and synthetic receipts are for demonstration only. Do not use real receipts with free-tier API keys.
 

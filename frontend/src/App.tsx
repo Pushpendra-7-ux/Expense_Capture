@@ -10,6 +10,7 @@ import { EmployeeNoBillPage } from './pages/employee/EmployeeNoBillPage';
 import { EmployeeReviewPage } from './pages/employee/EmployeeReviewPage';
 import { EmployeeConfirmationPage } from './pages/employee/EmployeeConfirmationPage';
 import { EmployeeExpenseDetailPage } from './pages/employee/EmployeeExpenseDetailPage';
+import { EmployeeAnalyticsPage } from './pages/employee/EmployeeAnalyticsPage';
 import { FinanceClaimsPage } from './pages/finance/FinanceClaimsPage';
 import { FinanceClaimDetailPage } from './pages/finance/FinanceClaimDetailPage';
 import { FinanceAnalyticsPage } from './pages/finance/FinanceAnalyticsPage';
@@ -33,6 +34,7 @@ export default function App() {
 
         <Route path="/employee" element={<EmployeeLayout />}>
           <Route index element={<EmployeeFeedPage />} />
+          <Route path="analytics" element={<EmployeeAnalyticsPage />} />
           <Route path="snap" element={<EmployeeSnapPage />} />
           <Route path="no-bill" element={<EmployeeNoBillPage />} />
           <Route path="review" element={<EmployeeReviewPage />} />

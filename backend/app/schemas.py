@@ -34,14 +34,26 @@ class Category(str, Enum):
 
 
 CATEGORY_LABELS: dict[Category, str] = {
-    Category.CAB_LOCAL_TRANSPORT: "Cab & local transport",
-    Category.TRAVEL: "Travel (flights/train/hotel)",
-    Category.CLIENT_MEALS_ENTERTAINMENT: "Client meals & entertainment",
-    Category.TEAM_MEALS: "Team meals",
-    Category.COMMUNICATION_DATA: "Communication & data",
-    Category.OFFICE_SUPPLIES: "Office & supplies",
+    Category.CAB_LOCAL_TRANSPORT: "Travel & Ground Transit",
+    Category.TRAVEL: "Flights & Hotels",
+    Category.CLIENT_MEALS_ENTERTAINMENT: "Client Entertainment",
+    Category.TEAM_MEALS: "Meals & Dining",
+    Category.COMMUNICATION_DATA: "Comms & Data",
+    Category.OFFICE_SUPPLIES: "Office & Supplies",
     Category.OTHER: "Other",
 }
+
+
+class ReviewStatus(str, Enum):
+    SUBMITTED = "submitted"
+    UNDER_REVIEW = "under_review"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ReviewDecisionAction(str, Enum):
+    APPROVE = "approve"
+    REJECT = "reject"
 
 
 class ReceiptType(str, Enum):
@@ -169,18 +181,43 @@ class ExpenseResponse(BaseModel):
     invoice_no: str | None = None
     tax_amount_minor: int | None = None
     extraction_status: ExtractionStatus
+    review_status: ReviewStatus = ReviewStatus.SUBMITTED
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    review_note: str | None = None
+    billable: bool = True
     possible_duplicate: bool = False
+    extraction_json: dict[str, Any] | None = None
     created_at: datetime
     attachment_count: int = 0
     attachments: list[AttachmentInfo] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
+    @field_validator("review_status", mode="before")
+    @classmethod
+    def default_review_status(cls, value: Any) -> Any:
+        """Older rows and in-flight objects may not have a review status yet."""
+        return value or ReviewStatus.SUBMITTED
+
+    @field_validator("billable", mode="before")
+    @classmethod
+    def default_billable(cls, value: Any) -> Any:
+        return True if value is None else value
+
     @model_validator(mode="after")
     def populate_label(self) -> ExpenseResponse:
         if self.category in CATEGORY_LABELS:
             self.category_label = CATEGORY_LABELS[self.category]
         return self
+
+
+class ReviewDecision(BaseModel):
+    """Finance team decision on a submitted claim."""
+
+    action: ReviewDecisionAction
+    note: str | None = Field(default=None, max_length=500)
+    reviewer: str = Field(default="Finance Team • OPE", max_length=200)
 
 
 class ExpenseListResponse(BaseModel):

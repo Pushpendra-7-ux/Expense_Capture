@@ -22,6 +22,27 @@ export function formatINR(paise: number): string {
 }
 
 /**
+ * Parse a user-entered Indian rupee amount into integer paise.
+ * Accepts ₹, "Rs", INR, Indian comma grouping, and surrounding whitespace.
+ * Returns null for an empty or malformed value.
+ */
+export function parseAmountToPaise(input: string): number | null {
+  if (!input) return null;
+  let cleaned = input
+    .replace(/[\u20b9]/g, '')
+    .replace(/\b(?:inr|rs\.?)\b/gi, '')
+    .replace(/[,\s]/g, '')
+    .trim();
+  if (!cleaned) return null;
+  // Normalise a Unicode minus and reject multiple decimal points.
+  cleaned = cleaned.replace(/\u2212/g, '-');
+  if (!/^-?\d+(\.\d{1,2})?$/.test(cleaned)) return null;
+  const rupees = Number(cleaned);
+  if (!Number.isFinite(rupees)) return null;
+  return Math.round(rupees * 100);
+}
+
+/**
  * Format a Date to IST time string (e.g., "2:30 PM").
  */
 export function formatTime(date: Date): string {

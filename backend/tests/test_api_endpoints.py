@@ -9,6 +9,7 @@ Tests:
 4. POST /expenses (idempotency header enforcement and replay)
 5. GET /expenses (cursor pagination, limits)
 6. GET /expenses/{identifier} (lookup by reference_id and UUID, 404 handling)
+7. PATCH /expenses/{identifier}/review (approve, reject-with-note, 404)
 """
 
 from __future__ import annotations
@@ -206,7 +207,7 @@ async def test_submit_expense_success(client, mock_db_session):
         assert resp.status_code == 200
         data = resp.json()
         assert data["reference_id"] == "OPE-X99Z12"
-        assert data["category_label"] == "Travel (flights/train/hotel)"
+        assert data["category_label"] == "Flights & Hotels"
         assert data["amount_minor"] == 85000
         assert data["merchant"] == "Taj Hotel Mumbai"
 
@@ -263,7 +264,7 @@ async def test_get_expenses_list(client):
         assert data["has_more"] is False
         assert len(data["items"]) == 1
         assert data["items"][0]["reference_id"] == "OPE-K77L43"
-        assert data["items"][0]["category_label"] == "Cab & local transport"
+        assert data["items"][0]["category_label"] == "Travel & Ground Transit"
 
 
 @pytest.mark.asyncio
@@ -274,3 +275,127 @@ async def test_get_single_expense_not_found(client):
         resp = await client.get("/expenses/OPE-NOTFOUND")
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"].lower()
+
+
+def _reviewed_expense(status: str = "approved") -> Expense:
+    """Build a fully populated Expense for finance review responses."""
+    expense = Expense(
+        id=uuid.uuid4(),
+        reference_id="OPE-REV123",
+        user_id=SEED_USER_ID,
+        amount_minor=342050,
+        currency="INR",
+        expense_date=date.today(),
+        merchant="Uber",
+        category=Category.CAB_LOCAL_TRANSPORT.value,
+        reason="Client roadshow travel",
+        receipt_type=ReceiptType.BILL_PHOTO.value,
+        extraction_status=ExtractionStatus.OK.value,
+        extraction_json={
+            "status": "ok",
+            "fields": {"amount_rupees": "3420.50", "merchant": "Uber"},
+        },
+        review_status=status,
+        reviewed_by="Finance Team • OPE",
+        reviewed_at=datetime.now(timezone.utc),
+        review_note="Personal desk purchase — not reimbursable.",
+        billable=True,
+        possible_duplicate=False,
+        created_at=datetime.now(timezone.utc),
+    )
+    expense.attachments = []
+    expense.attachment_count = 0
+    return expense
+
+
+@pytest.mark.asyncio
+async def test_review_expense_approve(client):
+    """PATCH /expenses/{id}/review approves a claim and records the reviewer."""
+    expense = _reviewed_expense("approved")
+
+    with patch("app.main.review_expense", new_callable=AsyncMock) as mock_review:
+        mock_review.return_value = expense
+        resp = await client.patch(
+            "/expenses/OPE-REV123/review",
+            json={"action": "approve", "note": "Looks good", "reviewer": "Finance Team • OPE"},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["review_status"] == "approved"
+        assert data["reviewed_by"] == "Finance Team • OPE"
+        assert data["review_note"] == "Personal desk purchase — not reimbursable."
+        assert data["extraction_json"]["fields"]["merchant"] == "Uber"
+        mock_review.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_review_expense_reject_requires_note(client):
+    """Rejecting without a reviewer note is rejected before writing."""
+    with patch("app.main.review_expense", new_callable=AsyncMock) as mock_review:
+        resp = await client.patch(
+            "/expenses/OPE-REV123/review",
+            json={"action": "reject", "note": "   "},
+        )
+
+        assert resp.status_code == 422
+        assert "reason" in resp.json()["detail"].lower()
+        mock_review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_review_expense_reject_records_note(client):
+    """A valid rejection persists the note for the employee detail screen."""
+    expense = _reviewed_expense("rejected")
+
+    with patch("app.main.review_expense", new_callable=AsyncMock) as mock_review:
+        mock_review.return_value = expense
+        resp = await client.patch(
+            "/expenses/OPE-REV123/review",
+            json={"action": "reject", "note": "Duplicate claim"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["review_status"] == "rejected"
+        kwargs = mock_review.await_args.kwargs
+        assert kwargs["action"] == "reject"
+        assert kwargs["note"] == "Duplicate claim"
+        assert kwargs["reviewer"] == "Finance Team • OPE"
+
+
+@pytest.mark.asyncio
+async def test_review_expense_not_found(client):
+    """Reviewing a missing claim returns 404."""
+    with patch("app.main.review_expense", new_callable=AsyncMock) as mock_review:
+        mock_review.return_value = None
+        resp = await client.patch(
+            "/expenses/OPE-MISSING/review",
+            json={"action": "approve"},
+        )
+
+        assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_attachment_must_belong_to_expense(client, mock_db_session):
+    """An attachment from another claim cannot be read through this expense."""
+    expense = _reviewed_expense()
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+    mock_db_session.execute.return_value = result
+
+    with patch(
+        "app.main.get_expense_by_id", new_callable=AsyncMock
+    ) as mock_get, patch(
+        "app.main.storage.get", new_callable=AsyncMock
+    ) as mock_storage_get:
+        mock_get.return_value = expense
+        attachment_id = uuid.uuid4()
+        resp = await client.get(
+            f"/expenses/{expense.reference_id}/attachments/{attachment_id}"
+        )
+
+        assert resp.status_code == 404
+        assert "attachment not found" in resp.json()["detail"].lower()
+        mock_storage_get.assert_not_awaited()

@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+
 import { theme } from '../theme';
 
 interface PDFCardProps {
@@ -12,15 +13,18 @@ interface PDFCardProps {
 
 export function PDFCard({ filename, sizeBytes, viewUrl, onRemove }: PDFCardProps) {
   const handleView = () => {
-    if (viewUrl && typeof window !== 'undefined') {
+    if (!viewUrl) return;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
       window.open(viewUrl, '_blank', 'noopener,noreferrer');
+      return;
     }
+    Linking.openURL(viewUrl).catch(() => {});
   };
 
   const formatSize = (bytes?: number) => {
     if (!bytes) return '';
     if (bytes < 1024 * 1024) {
-      return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / 1024).toFixed(0)} KB`;
     }
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
@@ -28,7 +32,11 @@ export function PDFCard({ filename, sizeBytes, viewUrl, onRemove }: PDFCardProps
   return (
     <View style={styles.card}>
       <View style={styles.iconContainer}>
-        <Ionicons name="document-text" size={24} color={theme.colors.indigo} />
+        <Ionicons
+          name="document-text-outline"
+          size={22}
+          color={theme.colors.amberDeep}
+        />
       </View>
 
       <View style={styles.info}>
@@ -36,32 +44,46 @@ export function PDFCard({ filename, sizeBytes, viewUrl, onRemove }: PDFCardProps
           {filename}
         </Text>
         <Text style={styles.meta}>
-          PDF Document {sizeBytes ? `• ${formatSize(sizeBytes)}` : ''}
+          PDF invoice{sizeBytes ? ` • ${formatSize(sizeBytes)}` : ''}
         </Text>
       </View>
 
       <View style={styles.actions}>
-        {viewUrl && (
+        {viewUrl ? (
           <Pressable
             onPress={handleView}
-            style={({ pressed }) => [styles.viewBtn, pressed && { opacity: 0.7 }]}
+            style={({ pressed }) => [
+              styles.viewBtn,
+              pressed && { opacity: 0.65 },
+            ]}
             accessibilityLabel={`View ${filename}`}
           >
             <Text style={styles.viewBtnText}>View</Text>
-            <Ionicons name="open-outline" size={14} color={theme.colors.indigo} />
+            <Ionicons
+              name="open-outline"
+              size={13}
+              color={theme.colors.amberDeep}
+            />
           </Pressable>
-        )}
+        ) : null}
 
-        {onRemove && (
+        {onRemove ? (
           <Pressable
             onPress={onRemove}
-            style={({ pressed }) => [styles.removeBtn, pressed && { opacity: 0.6 }]}
+            style={({ pressed }) => [
+              styles.removeBtn,
+              pressed && { opacity: 0.6 },
+            ]}
             hitSlop={8}
             accessibilityLabel="Remove file"
           >
-            <Ionicons name="close-circle" size={20} color={theme.colors.textSecondary} />
+            <Ionicons
+              name="close-circle"
+              size={20}
+              color={theme.colors.textMuted}
+            />
           </Pressable>
-        )}
+        ) : null}
       </View>
     </View>
   );
@@ -71,65 +93,64 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.bgPrimary,
+    backgroundColor: theme.colors.surface,
     borderRadius: theme.radii.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-    minHeight: 60,
+    padding: 11,
+    minHeight: 62,
   },
   iconContainer: {
     width: 40,
     height: 40,
     borderRadius: theme.radii.sm,
-    backgroundColor: theme.colors.indigoBg,
+    backgroundColor: theme.colors.amberSoft,
+    borderWidth: 1,
+    borderColor: theme.colors.amberBorder,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: theme.spacing.md,
+    marginRight: 11,
   },
   info: {
     flex: 1,
-    marginRight: theme.spacing.sm,
+    marginRight: 8,
   },
   filename: {
     fontFamily: theme.typography.fontFamily,
-    ...theme.typography.bodyMedium,
+    fontSize: 13,
     fontWeight: '600',
     color: theme.colors.textPrimary,
   },
   meta: {
     fontFamily: theme.typography.fontFamily,
-    fontSize: 11,
-    color: theme.colors.textSecondary,
+    fontSize: 10.5,
+    color: theme.colors.textMuted,
     marginTop: 2,
   },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.sm,
+    gap: 6,
   },
   viewBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 10,
-    minHeight: 44,
-    borderRadius: theme.radii.sm,
-    backgroundColor: theme.colors.bgSecondary,
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: theme.radii.xs,
+    backgroundColor: theme.colors.amberSoft,
   },
   viewBtnText: {
     fontFamily: theme.typography.fontFamily,
-    ...theme.typography.caption,
+    fontSize: 11,
     fontWeight: '700',
-    color: theme.colors.indigo,
+    color: theme.colors.amberDeep,
   },
   removeBtn: {
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: 32,
+    minHeight: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 4,
   },
 });

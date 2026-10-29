@@ -34,7 +34,7 @@ def test_expense_response_category_label_population():
         attachments=[],
     )
 
-    assert exp.category_label == "Cab & local transport"
+    assert exp.category_label == "Travel & Ground Transit"
     assert exp.amount_minor == 6840
     assert exp.reference_id == "OPE-A7K291"
 
@@ -71,7 +71,7 @@ def test_expense_list_response_schema():
     assert len(resp.items) == 5
     assert resp.has_more is True
     assert resp.total_count == 15
-    assert resp.items[0].category_label == "Office & supplies"
+    assert resp.items[0].category_label == "Office & Supplies"
 
 
 def test_reference_id_generation_deterministic_shape():

@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     )
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.5-flash-lite"
+    GEMINI_FALLBACK_MODELS: str = (
+        "gemini-3.5-flash,gemini-2.5-flash,gemini-3.6-flash,"
+        "gemini-3.8-flash,gemini-2.5-flash-lite"
+    )
     FRONTEND_ORIGINS: str = "http://localhost:8081"
     TRUSTED_PROXY: bool = False
     RATE_LIMIT_PER_IP: int = 20
@@ -37,6 +41,18 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         """Split the comma-separated FRONTEND_ORIGINS into a list."""
         return [o.strip() for o in self.FRONTEND_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def gemini_model_candidates(self) -> list[str]:
+        """Primary model first, then a de-duplicated fallback cascade."""
+        models = [self.GEMINI_MODEL]
+        models.extend(
+            m.strip()
+            for m in self.GEMINI_FALLBACK_MODELS.split(",")
+            if m.strip()
+        )
+        # Preserve order while removing duplicates.
+        return list(dict.fromkeys(models))
 
     model_config = {
         "env_file": (".env", "backend/.env"),

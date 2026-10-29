@@ -90,6 +90,52 @@ def extract_amount_from_text(text: str) -> float | None:
     return None
 
 
+def parse_model_date(value: str | None, today_str: str) -> tuple[str, bool]:
+    """Normalise common receipt date formats to ISO (YYYY-MM-DD).
+
+    Returns (iso_date, was_invalid_or_future). Models occasionally ignore the
+    schema and return DD/MM/YYYY, so we repair that code-side rather than
+    discarding a perfectly readable receipt.
+    """
+    if not value:
+        return today_str, False
+
+    raw = str(value).strip()
+    candidates = [raw]
+    # Handles "28/10/2024 2:48 PM" and similar trailing text.
+    candidates.extend(raw.replace(",", " ").split())
+
+    formats = (
+        "%Y-%m-%d",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%d.%m.%Y",
+        "%d %b %Y",
+        "%d %B %Y",
+    )
+    parsed: date | None = None
+    for candidate in candidates:
+        for fmt in formats:
+            try:
+                parsed = datetime.strptime(candidate, fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed is not None:
+            break
+
+    if parsed is None:
+        return today_str, True
+
+    try:
+        if parsed > date.fromisoformat(today_str):
+            return today_str, True
+    except ValueError:
+        return today_str, True
+
+    return parsed.isoformat(), False
+
+
 class ExtractionService:
     def __init__(self) -> None:
         self.semaphore = _SEMAPHORE
@@ -105,6 +151,7 @@ CONTEXT & RULES:
 - Indian bills commonly use DD/MM/YYYY date formatting, ₹ (INR), and GST numbers.
 - For bills with multiple pages or multiple photos, all photos are parts of ONE bill.
 - The 'total_amount' MUST be the final grand total payable amount (after all discounts, taxes, and service charges). Never report a subtotal, item price, tendered cash, or change due.
+- For itemized bills, list EVERY visible line item in 'line_items' with its description and amount. Do not collapse multiple items into a single row, even when there are 10 or more entries.
 - For payment screenshots (Google Pay, PhonePe, Paytm, BHIM, bank app): merchant = payee name, txn_ref = UPI reference ID / transaction ID / UTR. The screenshot's amount and date are the definitive values. Supporting documents only provide context.
 - 'reason_suggestion' must be strictly derived from what is visible on the bill or typed in the note. Maximum 140 characters. NEVER invent an unauthorized business purpose.
 - Return null for fields that are blurred, absent, or unreadable. Do not guess.
@@ -242,10 +289,7 @@ CONTEXT & RULES:
         extracted_data: GeminiReceiptExtraction | None = None
         last_error: Exception | None = None
 
-        candidate_models = [settings.GEMINI_MODEL]
-        for fallback_m in ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash"]:
-            if fallback_m not in candidate_models:
-                candidate_models.append(fallback_m)
+        candidate_models = settings.gemini_model_candidates
 
         for attempt, attempt_model in enumerate(candidate_models, start=1):
             remaining_budget = TOTAL_BUDGET_SECONDS - (time.monotonic() - start_time)
@@ -348,6 +392,73 @@ CONTEXT & RULES:
                     f"Total (₹{extracted.total_amount:.2f}) does not match subtotal + tax (₹{expected_total:.2f})."
                 )
 
+        # Line-item normalization. A single receipt can carry ten or more items;
+        # keep every readable row so the employee and finance team can verify it.
+        # Items whose amount is illegible stay in the list with a null amount.
+        line_items: list[dict[str, Any]] = []
+        for index, item in enumerate(extracted.line_items or []):
+            description = (item.description or "").strip() or f"Item {index + 1}"
+            if item.amount is None:
+                line_items.append(
+                    {
+                        "description": description[:160],
+                        "amount": None,
+                        "amount_minor": None,
+                    }
+                )
+                continue
+            try:
+                item_amount = float(item.amount)
+            except (TypeError, ValueError):
+                item_amount = None
+            if item_amount is None or item_amount < 0 or item_amount > 1_000_000:
+                line_items.append(
+                    {
+                        "description": description[:160],
+                        "amount": None,
+                        "amount_minor": None,
+                    }
+                )
+                continue
+            line_items.append(
+                {
+                    "description": description[:160],
+                    "amount": round(item_amount, 2),
+                    "amount_minor": rupees_to_paise(item_amount),
+                }
+            )
+
+        known_amounts = [
+            item["amount"] for item in line_items if item["amount"] is not None
+        ]
+        line_items_total = (
+            round(sum(known_amounts), 2) if known_amounts else None
+        )
+        line_items_complete = bool(line_items) and len(known_amounts) == len(line_items)
+
+        if line_items and not line_items_complete:
+            notices.append(
+                "Some line-item amounts were unreadable. Check the itemized bill before submitting."
+            )
+
+        # Compare itemization against the subtotal when available, otherwise the
+        # grand total. A mismatch is a verification prompt, not an auto-correction.
+        if line_items_complete and line_items_total is not None:
+            reconciliation_target = (
+                extracted.subtotal
+                if extracted.subtotal is not None
+                else extracted.total_amount
+            )
+            if (
+                reconciliation_target is not None
+                and abs(line_items_total - reconciliation_target) > 1.0
+            ):
+                amount_conf = min(amount_conf, 0.55)
+                notices.append(
+                    f"Line items add up to ₹{line_items_total:.2f}, but the bill reads "
+                    f"₹{reconciliation_target:.2f}. Verify the amount and the itemized entries."
+                )
+
         # Typed note conflict check (typed wins)
         if note:
             typed_amt = extract_amount_from_text(note)
@@ -363,29 +474,38 @@ CONTEXT & RULES:
                     amount_minor = typed_paise
                     amount_conf = 0.9
 
+        # If the grand total was cropped but the itemization is complete, offer
+        # the sum as a clearly-labelled starting point instead of an empty amount.
+        if (
+            amount_minor is None
+            and line_items_complete
+            and line_items_total
+            and line_items_total > 0
+        ):
+            amount_minor = rupees_to_paise(line_items_total)
+            amount_conf = min(max(amount_conf, 0.0), 0.75)
+            notices.append(
+                f"No grand total was visible. The {len(line_items)} line items add up to "
+                f"₹{line_items_total:.2f}; verify this amount."
+            )
+
         # Currency check
         currency = (extracted.currency or "INR").upper()
         if currency != "INR":
             notices.append(f"Foreign currency detected ({currency}). No conversion applied.")
 
         # 2. Date verification
-        expense_date_str = extracted.date
+        expense_date_str, date_was_repaired = parse_model_date(
+            extracted.date, today_str
+        )
         date_conf = extracted.confidence.date
 
-        if expense_date_str:
-            try:
-                parsed_d = date.fromisoformat(expense_date_str)
-                today_d = date.fromisoformat(today_str)
-                if parsed_d > today_d:
-                    notices.append(f"Extracted date {expense_date_str} is in the future. Reset to today.")
-                    expense_date_str = today_str
-                    date_conf = min(date_conf, 0.5)
-            except ValueError:
-                expense_date_str = today_str
-                date_conf = min(date_conf, 0.4)
-        else:
-            expense_date_str = today_str
-            date_conf = 0.5
+        if date_was_repaired:
+            if extracted.date and str(extracted.date).strip():
+                notices.append(
+                    "The bill date was unclear or in the future. Today's date has been pre-filled."
+                )
+            date_conf = min(date_conf, 0.5)
 
         # 3. Merchant verification
         merchant = extracted.merchant or extracted.payee_name
@@ -413,14 +533,31 @@ CONTEXT & RULES:
                 "These look like different bills. Submit this one first, then scan the other."
             )
 
+        # Surface model notices (pending payment, blurred region, etc.) without
+        # dumping raw model text into the UI.
+        if extracted.notes:
+            clean_note = str(extracted.notes).strip()
+            if clean_note and len(clean_note) <= 240:
+                notices.append(clean_note)
+
         # 6. Reason suggestion
         reason = extracted.reason_suggestion or note or ""
         reason_conf = extracted.confidence.reason
 
-        # Receipt type determination
-        has_screenshot = any(f.document_type.value == "payment_screenshot" for f in extracted.files)
+        # Receipt type determination. If the model did not classify the file,
+        # a saved attachment is still a bill photo for form purposes.
+        has_screenshot = any(
+            f.document_type.value == "payment_screenshot" for f in extracted.files
+        )
         has_bill = any(f.document_type.value == "bill" for f in extracted.files)
-        receipt_type = "payment_screenshot" if has_screenshot and not has_bill else ("bill_photo" if has_bill else "none")
+        if has_screenshot and not has_bill:
+            receipt_type = "payment_screenshot"
+        elif has_bill:
+            receipt_type = "bill_photo"
+        elif attachment_ids:
+            receipt_type = "bill_photo"
+        else:
+            receipt_type = "none"
 
         status = "ok" if amount_minor and merchant and amount_conf >= 0.6 else "partial"
 
@@ -451,6 +588,8 @@ CONTEXT & RULES:
             "reason_suggestion": extracted.reason_suggestion,
             "notices": notices,
             "attachment_ids": [str(aid) for aid in attachment_ids],
+            "line_items": line_items,
+            "line_items_total": line_items_total,
             "raw_extraction": extracted.model_dump(),
         }
 
@@ -492,6 +631,8 @@ CONTEXT & RULES:
             "reason_suggestion": None,
             "notices": notices,
             "attachment_ids": [str(aid) for aid in attachment_ids],
+            "line_items": [],
+            "line_items_total": None,
             "raw_extraction": None,
             "cached": False,
         }

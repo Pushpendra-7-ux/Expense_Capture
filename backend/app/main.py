@@ -5,6 +5,7 @@ Endpoints:
 - POST /expenses               (Idempotent creation, server validation, duplicate flag)
 - GET  /expenses               (Paginated list, newest first, cursor support)
 - GET  /expenses/{id}          (Single expense detail by UUID or reference_id)
+- PATCH /expenses/{id}/review   (Finance team approve / reject decision)
 - POST /expenses/attachments   (Upload & validate attachments: magic-bytes, size, PDF pages)
 - GET  /expenses/{id}/attachments/{aid} (Serve attachment: stored Content-Type, nosniff, inline)
 - GET  /attachments/{aid}      (Serve unattached/draft attachment preview)
@@ -14,10 +15,12 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import AsyncGenerator
+from urllib.parse import quote
 
 from fastapi import (
     Depends,
@@ -34,29 +37,58 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.crud import create_expense, get_expense_by_id, list_expenses
+from app.crud import (
+    create_expense,
+    get_expense_by_id,
+    list_expenses,
+    review_expense,
+)
 from app.database import engine, get_db, get_session_factory
 from app.file_validation import (
     FileValidationError,
     validate_file,
     MAX_FILES,
 )
-from app.extraction_service import extraction_service
+from app.extraction_service import (
+    compute_cache_key,
+    extraction_service,
+    get_today_kolkata_str,
+)
+from app.models import ExpenseAttachment, ExtractionCache
 from app.rate_limiter import check_and_increment_rate_limits, get_client_ip
 from app.schemas import (
     AttachmentInfo,
     ExpenseCreate,
     ExpenseListResponse,
     ExpenseResponse,
+    ReviewDecision,
 )
 from app.seed import run_seed
 from app.storage import storage
 
 logger = logging.getLogger("ope")
 logging.basicConfig(level=logging.INFO)
+
+
+def _attachment_headers(mime: str, filename: str | None, fallback: str) -> dict[str, str]:
+    """Build safe inline headers for a stored attachment.
+
+    Filenames are user-supplied, so strip control characters and provide both an
+    ASCII fallback and RFC 5987 UTF-8 encoding for non-Latin names.
+    """
+    display_name = (filename or fallback).replace("\r", " ").replace("\n", " ").strip()
+    ascii_name = re.sub(r"[^A-Za-z0-9._ -]", "_", display_name).strip() or fallback
+    return {
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": (
+            f'inline; filename="{ascii_name}"; '
+            f"filename*=UTF-8''{quote(display_name, safe='')}"
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +261,20 @@ async def get_expense_attachment(
             detail=f"Expense '{identifier}' not found",
         )
 
+    # An attachment must belong to the claim in the URL. Without this check any
+    # known attachment ID could be read through any expense reference.
+    owned = await db.execute(
+        select(ExpenseAttachment.id).where(
+            ExpenseAttachment.id == aid,
+            ExpenseAttachment.expense_id == expense.id,
+        )
+    )
+    if owned.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment not found",
+        )
+
     data = await storage.get(session=db, attachment_id=aid)
     if not data:
         raise HTTPException(
@@ -242,10 +288,7 @@ async def get_expense_attachment(
     return Response(
         content=file_bytes,
         media_type=mime,
-        headers={
-            "X-Content-Type-Options": "nosniff",
-            "Content-Disposition": f'inline; filename="{safe_filename}"',
-        },
+        headers=_attachment_headers(mime, safe_filename, f"attachment_{aid}"),
     )
 
 
@@ -272,10 +315,7 @@ async def get_attachment_preview(
     return Response(
         content=file_bytes,
         media_type=mime,
-        headers={
-            "X-Content-Type-Options": "nosniff",
-            "Content-Disposition": f'inline; filename="{safe_filename}"',
-        },
+        headers=_attachment_headers(mime, safe_filename, f"attachment_{aid}"),
     )
 
 
@@ -292,6 +332,7 @@ async def extract_expense(
     request: Request,
     files: list[UploadFile] = File(default=[]),
     note: str | None = Form(default=None),
+    attachment_kind: str = Form(default="bill"),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -305,6 +346,8 @@ async def extract_expense(
     - Always returns HTTP 200 with draft object (never blocks manual entry)
     """
     clean_note = note.strip() if note else None
+    if attachment_kind not in {"bill", "payment_screenshot", "supporting"}:
+        attachment_kind = "bill"
     if not files and not clean_note:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -321,6 +364,7 @@ async def extract_expense(
     validated_files_data: list[tuple[bytes, str]] = []
     file_hashes: list[str] = []
     saved_attachment_ids: list[uuid.UUID] = []
+    attachment_info: list[dict] = []
 
     for f in files:
         content = await f.read()
@@ -338,24 +382,48 @@ async def extract_expense(
             session=db,
             file_bytes=validated.file_bytes,
             mime=validated.mime,
-            kind="bill",
+            kind=attachment_kind,
             filename=validated.filename,
         )
         saved_attachment_ids.append(saved.id)
         file_hashes.append(saved.sha256)
         validated_files_data.append((validated.file_bytes, validated.mime))
+        attachment_info.append(
+            {
+                "id": str(saved.id),
+                "mime": saved.mime,
+                "filename": saved.filename,
+                "kind": saved.kind,
+            }
+        )
 
     await db.commit()
 
-    # Rate limit check (Postgres-backed per-IP and global daily cap)
-    # Per spec: Beyond a limit, return a normal "failed" draft with attachments so manual entry works
-    client_ip = get_client_ip(request)
-    allowed, err_msg = await check_and_increment_rate_limits(db, client_ip)
-    if not allowed:
-        return extraction_service._create_failed_draft(
-            saved_attachment_ids,
-            [err_msg or "AI extraction limit reached. Please fill in details manually."],
-        )
+    # Cache hits are free: do not consume the device/day extraction allowance
+    # when the same bill has already been analysed today.
+    cache_key = compute_cache_key(
+        file_hashes=file_hashes,
+        note=clean_note,
+        today_str=get_today_kolkata_str(),
+    )
+    cached_lookup = await db.execute(
+        select(ExtractionCache.id).where(ExtractionCache.key == cache_key)
+    )
+    is_cached = cached_lookup.scalar_one_or_none() is not None
+
+    # Rate limit check (Postgres-backed per-IP and global daily cap).
+    # Beyond a limit, return a normal "failed" draft with attachments so manual
+    # entry still works.
+    if not is_cached:
+        client_ip = get_client_ip(request)
+        allowed, err_msg = await check_and_increment_rate_limits(db, client_ip)
+        if not allowed:
+            draft = extraction_service._create_failed_draft(
+                saved_attachment_ids,
+                [err_msg or "AI extraction limit reached. Please fill in details manually."],
+            )
+            draft["attachments"] = attachment_info
+            return draft
 
     # Call extraction service
     draft = await extraction_service.extract(
@@ -366,7 +434,7 @@ async def extract_expense(
         attachment_ids=saved_attachment_ids,
         thinking_level="low",
     )
-
+    draft["attachments"] = attachment_info
     return draft
 
 
@@ -453,6 +521,46 @@ async def get_single_expense(
     Retrieve single expense details by UUID or reference_id (e.g. OPE-A7K291).
     """
     expense = await get_expense_by_id(session=db, identifier=identifier)
+    if not expense:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Expense '{identifier}' not found",
+        )
+    return ExpenseResponse.model_validate(expense)
+
+
+@app.patch(
+    "/expenses/{identifier}/review",
+    response_model=ExpenseResponse,
+    tags=["finance"],
+    summary="Approve or reject a claim (finance team)",
+)
+async def review_single_expense(
+    identifier: str,
+    decision: ReviewDecision,
+    db: AsyncSession = Depends(get_db),
+) -> ExpenseResponse:
+    """
+    Record the finance team's decision on a claim.
+
+    This build has no authentication by design: the client switches between the
+    employee workspace and the finance console. The endpoint records the
+    reviewer label supplied by the finance console for audit display.
+    """
+    note = decision.note.strip() if decision.note else None
+    if decision.action.value == "reject" and (not note or len(note) < 3):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Add a short reason before rejecting a claim.",
+        )
+
+    expense = await review_expense(
+        session=db,
+        identifier=identifier,
+        action=decision.action.value,
+        reviewer=decision.reviewer,
+        note=note,
+    )
     if not expense:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

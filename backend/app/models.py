@@ -67,6 +67,15 @@ ExtractionStatusEnum = ENUM(
     create_type=False,
 )
 
+ReviewStatusEnum = ENUM(
+    "submitted",
+    "under_review",
+    "approved",
+    "rejected",
+    name="review_status_enum",
+    create_type=False,
+)
+
 AttachmentKindEnum = ENUM(
     "bill",
     "payment_screenshot",
@@ -142,6 +151,20 @@ class Expense(Base):
     # --- Gemini extraction metadata ---
     extraction_status: Mapped[str] = mapped_column(
         ExtractionStatusEnum, nullable=False
+    )
+    review_status: Mapped[str] = mapped_column(
+        ReviewStatusEnum,
+        nullable=False,
+        default="submitted",
+        server_default="submitted",
+    )
+    reviewed_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    billable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
     )
     extraction_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     extracted_amount_minor: Mapped[int | None] = mapped_column(

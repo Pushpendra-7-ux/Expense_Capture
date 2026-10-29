@@ -1,15 +1,41 @@
 {
   "expo": {
-    "name": "Expense Capture",
+    "name": "Dexter OPE",
     "slug": "ope-expense-capture",
     "version": "1.0.0",
     "scheme": "ope",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-router"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dextercapital.ope",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Dexter OPE uses the camera to photograph expense receipts.",
+        "NSPhotoLibraryUsageDescription": "Dexter OPE uses your photo library so you can attach receipt images.",
+        "NSPhotoLibraryAddUsageDescription": "Dexter OPE saves processed receipt images for your claim."
+      }
+    },
+    "android": {
+      "package": "com.dextercapital.ope",
+      "permissions": ["CAMERA", "READ_MEDIA_IMAGES"]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Dexter OPE to choose receipt photos.",
+          "cameraPermission": "Allow Dexter OPE to photograph receipts."
+        }
+      ],
+      "expo-document-picker"
+    ],
     "experiments": {
       "typedRoutes": true
     }

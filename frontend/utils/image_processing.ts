@@ -9,7 +9,8 @@
  */
 
 export interface ProcessedFile {
-  file: File;
+  file?: File;
+  uri?: string;
   name: string;
   mime: string;
   size: number;
@@ -156,4 +157,15 @@ export async function processClientFile(rawFile: File): Promise<ProcessedFile> {
     previewUrl: URL.createObjectURL(compressed),
     isPdf: false,
   };
+}
+
+/** Release a web blob preview without touching native file URIs. */
+export function releasePreview(item: ProcessedFile) {
+  if (
+    typeof URL !== 'undefined' &&
+    item.previewUrl &&
+    item.previewUrl.startsWith('blob:')
+  ) {
+    URL.revokeObjectURL(item.previewUrl);
+  }
 }

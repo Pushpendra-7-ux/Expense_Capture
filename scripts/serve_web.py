@@ -18,6 +18,16 @@ class SPARequestHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(DIST_DIR), **kwargs)
 
+    def end_headers(self):
+        # Never cache HTML shells; bundles are content-hashed, but the shell
+        # must always point at the latest export.
+        if self.path.endswith('.html') or '.' not in self.path.split('/')[-1]:
+            self.send_header('Cache-Control', 'no-store')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', '*')
+        super().end_headers()
+
     def do_GET(self):
         # Extract path without query parameters
         clean_path = self.path.split("?")[0].lstrip("/")
@@ -46,16 +56,9 @@ class SPARequestHandler(http.server.SimpleHTTPRequestHandler):
 
         return super().do_GET()
 
-    def end_headers(self):
-        # Enable CORS and caching headers
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        super().end_headers()
-
-
 def run_server():
     os.chdir(str(DIST_DIR))
+    socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("0.0.0.0", PORT), SPARequestHandler) as httpd:
         print(f"🚀 Expense Capture Web serving on http://localhost:{PORT}")
         try:

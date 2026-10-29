@@ -13,7 +13,7 @@ from __future__ import annotations
 import secrets
 import string
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Sequence
 
 from sqlalchemy import func, select, or_
@@ -264,3 +264,45 @@ async def list_expenses(
     next_cursor = items[-1].created_at.isoformat() if has_more and items else None
 
     return items, next_cursor, has_more, total_count
+
+
+async def review_expense(
+    session: AsyncSession,
+    identifier: str,
+    action: str,
+    reviewer: str,
+    note: str | None = None,
+) -> Expense | None:
+    """Approve or reject a claim on behalf of the finance team.
+
+    Finance review is deliberately separate from the employee lookup path so a
+    reviewer can open any claim in the ledger, not only their own.
+    """
+    try:
+        val_uuid = uuid.UUID(identifier)
+        query = (
+            select(Expense)
+            .options(selectinload(Expense.attachments))
+            .where(Expense.id == val_uuid)
+        )
+    except ValueError:
+        query = (
+            select(Expense)
+            .options(selectinload(Expense.attachments))
+            .where(Expense.reference_id == identifier.upper())
+        )
+
+    result = await session.execute(query)
+    expense = result.scalar_one_or_none()
+    if expense is None:
+        return None
+
+    status = "approved" if action == "approve" else "rejected"
+    expense.review_status = status
+    expense.reviewed_by = reviewer.strip() or "Finance Team • OPE"
+    expense.reviewed_at = datetime.now(timezone.utc)
+    expense.review_note = note.strip() if note and note.strip() else None
+
+    await session.commit()
+    expense.attachment_count = len(expense.attachments)
+    return expense

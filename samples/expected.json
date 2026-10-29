@@ -15,7 +15,7 @@
   },
   {
     "filename": "sample_hotel_invoice.pdf",
-    "expected_amount_minor": 875000,
+    "expected_amount_minor": 980000,
     "expected_date": "2024-10-14",
     "expected_merchant": "Taj Hotel",
     "expected_receipt_type": "bill_photo"

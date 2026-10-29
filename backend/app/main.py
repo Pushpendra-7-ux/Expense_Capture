@@ -167,6 +167,25 @@ async def health_check() -> dict:
     }
 
 
+@app.get("/debug/db", tags=["ops"])
+async def debug_db(db: AsyncSession = Depends(get_db)) -> dict:
+    """Temporary debug endpoint to test DB connectivity."""
+    from sqlalchemy import text
+    try:
+        result = await db.execute(text("SELECT count(*) FROM users"))
+        user_count = result.scalar()
+        result2 = await db.execute(text("SELECT count(*) FROM expenses"))
+        expense_count = result2.scalar()
+        return {
+            "status": "ok",
+            "users": user_count,
+            "expenses": expense_count,
+            "db_url_prefix": settings.DATABASE_URL[:50],
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e), "type": type(e).__name__}
+
+
 # ---------------------------------------------------------------------------
 # File Attachment Endpoints
 # ---------------------------------------------------------------------------

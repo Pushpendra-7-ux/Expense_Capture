@@ -53,14 +53,19 @@ def get_engine() -> AsyncEngine:
     """
     global _engine
     if _engine is None:
+        import logging
+        logger = logging.getLogger("ope")
         connect_args: dict = {}
-        if _is_remote_db(settings.DATABASE_URL):
+        is_remote = _is_remote_db(settings.DATABASE_URL)
+        logger.info("Creating DB engine: remote=%s, url_prefix=%s", is_remote, settings.DATABASE_URL[:50])
+        if is_remote:
             # Supabase requires SSL; use a permissive context so self-signed
             # or Let's Encrypt certs are accepted without a local CA bundle.
             ssl_ctx = ssl.create_default_context()
             ssl_ctx.check_hostname = False
             ssl_ctx.verify_mode = ssl.CERT_NONE
             connect_args["ssl"] = ssl_ctx
+            logger.info("SSL context configured for remote DB")
 
         _engine = create_async_engine(
             settings.DATABASE_URL,

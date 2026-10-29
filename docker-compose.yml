@@ -1,3 +1,11 @@
+# docker-compose.yml — Optional local development stack.
+#
+# With Supabase as the production database, this file is only needed if
+# you want to run a local Postgres for offline development.
+#
+# To use Supabase directly (recommended), just set DATABASE_URL in .env
+# and skip `docker compose up`.
+
 version: "3.9"
 
 services:

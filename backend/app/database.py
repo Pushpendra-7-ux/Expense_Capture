@@ -4,10 +4,13 @@ app/database.py — Async SQLAlchemy engine, session factory, and dependency.
 Uses asyncpg as the PostgreSQL driver with lazy engine initialization
 so model definitions and unit tests can be imported without requiring
 an active database driver at import time.
+
+Supports Supabase (remote PostgreSQL with SSL) out of the box.
 """
 
 from __future__ import annotations
 
+import ssl
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -37,15 +40,34 @@ _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
+def _is_remote_db(url: str) -> bool:
+    """Return True when the DATABASE_URL points to a remote host (not localhost)."""
+    return "localhost" not in url and "127.0.0.1" not in url
+
+
 def get_engine() -> AsyncEngine:
-    """Return the global async engine, creating it if needed."""
+    """Return the global async engine, creating it if needed.
+
+    When connecting to Supabase or any remote PostgreSQL, an SSL context
+    is configured automatically so asyncpg can complete the TLS handshake.
+    """
     global _engine
     if _engine is None:
+        connect_args: dict = {}
+        if _is_remote_db(settings.DATABASE_URL):
+            # Supabase requires SSL; use a permissive context so self-signed
+            # or Let's Encrypt certs are accepted without a local CA bundle.
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+            connect_args["ssl"] = ssl_ctx
+
         _engine = create_async_engine(
             settings.DATABASE_URL,
             echo=False,
             pool_size=5,
             max_overflow=10,
+            connect_args=connect_args,
         )
     return _engine
 

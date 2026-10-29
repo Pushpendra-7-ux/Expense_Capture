@@ -2,12 +2,14 @@
 alembic/env.py — Async Alembic environment for Expense Capture (OPE).
 
 Uses the ``run_async`` pattern with asyncpg so that migrations execute
-inside an async event loop.
+inside an async event loop.  Supports Supabase (remote PostgreSQL with
+TLS) out of the box.
 """
 
 from __future__ import annotations
 
 import asyncio
+import ssl
 from logging.config import fileConfig
 
 from alembic import context
@@ -21,7 +23,8 @@ from app.database import Base
 config = context.config
 
 # Override the URL from settings (which reads .env).
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Escape any '%' for ConfigParser interpolation (e.g. %40 in passwords).
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 # Logging configuration from the ini file.
 if config.config_file_name is not None:
@@ -29,6 +32,11 @@ if config.config_file_name is not None:
 
 # Target metadata for autogenerate support.
 target_metadata = Base.metadata
+
+
+def _is_remote_db(url: str) -> bool:
+    """Return True when the DATABASE_URL points to a remote host."""
+    return "localhost" not in url and "127.0.0.1" not in url
 
 
 # ---------------------------------------------------------------------------
@@ -59,10 +67,22 @@ def do_run_migrations(connection) -> None:  # noqa: ANN001
 
 async def run_async_migrations() -> None:
     """Create an async engine and run migrations."""
+    cfg = config.get_section(config.config_ini_section, {})
+
+    # Supabase (and most cloud Postgres) requires TLS.
+    connect_args: dict = {}
+    db_url = cfg.get("sqlalchemy.url", "")
+    if _is_remote_db(db_url):
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        connect_args["ssl"] = ssl_ctx
+
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        cfg,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

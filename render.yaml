@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: expense-capture-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite
+      - key: GEMINI_FALLBACK_MODELS
+        value: gemini-3.5-flash,gemini-2.5-flash,gemini-3.6-flash,gemini-3.8-flash,gemini-2.5-flash-lite
+      - key: FRONTEND_ORIGINS
+        sync: false
+      - key: TRUSTED_PROXY
+        value: "true"
+      - key: RATE_LIMIT_PER_IP
+        value: "20"
+      - key: DAILY_GLOBAL_CAP
+        value: "300"

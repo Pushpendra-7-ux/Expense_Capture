@@ -54,6 +54,7 @@ class ReviewStatus(str, Enum):
 class ReviewDecisionAction(str, Enum):
     APPROVE = "approve"
     REJECT = "reject"
+    REQUEST_INFO = "request_info"
 
 
 class ReceiptType(str, Enum):

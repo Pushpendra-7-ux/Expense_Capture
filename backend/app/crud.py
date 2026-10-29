@@ -273,7 +273,7 @@ async def review_expense(
     reviewer: str,
     note: str | None = None,
 ) -> Expense | None:
-    """Approve or reject a claim on behalf of the finance team.
+    """Approve, reject, or request more information on a claim.
 
     Finance review is deliberately separate from the employee lookup path so a
     reviewer can open any claim in the ledger, not only their own.
@@ -297,7 +297,12 @@ async def review_expense(
     if expense is None:
         return None
 
-    status = "approved" if action == "approve" else "rejected"
+    if action == "approve":
+        status = "approved"
+    elif action == "request_info":
+        status = "under_review"
+    else:
+        status = "rejected"
     expense.review_status = status
     expense.reviewed_by = reviewer.strip() or "Finance Team • OPE"
     expense.reviewed_at = datetime.now(timezone.utc)

@@ -5,7 +5,7 @@ Endpoints:
 - POST /expenses               (Idempotent creation, server validation, duplicate flag)
 - GET  /expenses               (Paginated list, newest first, cursor support)
 - GET  /expenses/{id}          (Single expense detail by UUID or reference_id)
-- PATCH /expenses/{id}/review   (Finance team approve / reject decision)
+- PATCH /expenses/{id}/review   (Finance team approve / reject / request info decision)
 - POST /expenses/attachments   (Upload & validate attachments: magic-bytes, size, PDF pages)
 - GET  /expenses/{id}/attachments/{aid} (Serve attachment: stored Content-Type, nosniff, inline)
 - GET  /attachments/{aid}      (Serve unattached/draft attachment preview)
@@ -533,7 +533,7 @@ async def get_single_expense(
     "/expenses/{identifier}/review",
     response_model=ExpenseResponse,
     tags=["finance"],
-    summary="Approve or reject a claim (finance team)",
+    summary="Approve, reject, or request info on a claim (finance team)",
 )
 async def review_single_expense(
     identifier: str,
@@ -548,10 +548,12 @@ async def review_single_expense(
     reviewer label supplied by the finance console for audit display.
     """
     note = decision.note.strip() if decision.note else None
-    if decision.action.value == "reject" and (not note or len(note) < 3):
+    if decision.action.value in {"reject", "request_info"} and (
+        not note or len(note) < 3
+    ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Add a short reason before rejecting a claim.",
+            detail="Add a short reason before rejecting or requesting information.",
         )
 
     expense = await review_expense(

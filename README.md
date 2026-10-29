@@ -1,21 +1,37 @@
 # Expense Capture (OPE) — Dexter Capital
 
-Expense Capture (OPE) is a phone-first, single-purpose web application designed for Dexter Capital investment bankers to log out-of-pocket expenses (OPE) in the field in ~30 seconds.
+Expense Capture (OPE) is a web-first expense capture and review app for Dexter Capital investment bankers. Employees log out-of-pocket expenses in the field in about 30 seconds: snap a bill or upload proof, let Gemini pre-fill the claim, check it, and submit. Finance then reviews every claim in a desktop console, sees the exact stored Gemini reading, and approves, rejects, or requests more information.
 
-Employees log expenses standing up, in a hurry, right as they get into a cab. The product focuses strictly on this 30-second capture flow: snap a bill (or upload proof) -> auto-fill -> confirm and submit. A finance workspace then reviews every claim, opens the exact Gemini reading, and approves or rejects the payment.
-
-The interface is responsive by design: mobile widths follow the reference screens, while screens 1024px and wider use a persistent sidebar, wide claim feed, and two-column capture, review, and finance workspaces.
+There is no login, signup, password, or OTP. A role selector at `/` switches between two client-side workspaces and remembers the choice in `localStorage`. The employee experience is mobile-first and centered on desktop; the finance experience is desktop-first with tables and a dashboard, and remains usable on phones.
 
 ---
 
 ## 🏗️ Architecture & Stack
 
-- **Frontend**: React Native with Expo (SDK 53), running natively on iOS/Android and exported as a responsive web build (`react-native-web`). Mobile widths match the reference screens; desktop widths (>=1024px) use a persistent sidebar and multi-column workspaces.
-- **Backend**: FastAPI (Python 3.11+, async), Pydantic v2, SQLAlchemy 2 (async with `asyncpg`), Alembic migrations.
-- **Database**: PostgreSQL 16 (local via `docker-compose`).
-- **AI Extraction**: Google GenAI SDK (`google-genai`) with a Gemini Flash fallback cascade, `temperature=0.0`, structured output, and `media_resolution_high` for receipts.
-- **Finance workflow**: Role-based employee/finance workspaces with no login or mock authentication. The finance console lists every claim, exposes the stored Gemini extraction, and records approve/reject decisions with a reviewer label and optional note.
-- **Styling**: Single theme file (`theme.ts`) defining warm paper/ink/amber tokens, typography, spacing, radii, and elevation shadows matching the Dexter design language.
+- **Frontend**: React 18, Vite 5, TypeScript, React Router 6, Tailwind CSS 3.4, Lucide icons, Recharts.
+- **Backend**: FastAPI (Python 3.11+), Pydantic v2, SQLAlchemy 2 async with `asyncpg`, Alembic, PostgreSQL 16.
+- **AI extraction**: Google GenAI SDK with a Gemini Flash fallback cascade, `temperature=0.0`, structured output, and high media resolution for receipts.
+- **Image handling**: HEIC/HEIF converted to JPEG in the browser with `heic2any`; all images compressed to a maximum 1600px long edge at JPEG quality 0.85 before upload.
+- **Storage**: Attachments are stored as PostgreSQL `bytea` and served through claim-scoped endpoints.
+- **Design system**: Inter, warm cream/paper surfaces, ink `#0B0B0F` cards, gray borders, amber highlights, and green/amber/red statuses. Shared `Button`, `Card`, `Badge`, `Chip`, `Input`, `Modal`, and state components are used across both workspaces.
+
+---
+
+## 🧭 Routes
+
+| Route | Purpose |
+|---|---|
+| `/` | Role selection (Employee / Finance) |
+| `/employee` | Expense feed with month total and category filters |
+| `/employee/snap` | Camera/file bill capture and AI extraction |
+| `/employee/no-bill` | Payment proof or manual no-receipt claim |
+| `/employee/review` | Editable AI draft and submit |
+| `/employee/confirmation` | Submitted claim reference and amount |
+| `/employee/expenses/:id` | Read-only employee claim detail |
+| `/finance` | Claims queue, filters, sorting, pagination |
+| `/finance/claims/:id` | Claim review with bill, AI flags, line items, decision panel |
+| `/finance/analytics` | Four KPIs and two approved-spend charts |
+| `*` | Redirects to `/` |
 
 ---
 
@@ -23,76 +39,55 @@ The interface is responsive by design: mobile widths follow the reference screen
 
 ```
 Expense_Capture/
-├── docker-compose.yml        # Local PostgreSQL container definition
-├── .env.example              # Root environment template
-├── .gitignore
+├── docker-compose.yml              # Local PostgreSQL 16
+├── .env.example
 ├── README.md
-├── design/                   # Reference designs and brief
+├── design/                         # Reference designs and brief
+├── samples/                        # Synthetic receipt images/PDFs + expected.json
 ├── backend/
-│   ├── alembic/              # Async Alembic migrations
-│   │   ├── env.py
-│   │   └── versions/
-│   │       ├── 001_initial_schema.py     # Full schema: 5 tables, 4 enums, indexes
-│   │       ├── 002_review_metadata.py    # Display/review metadata columns
-│   │       └── 003_finance_review.py     # Rejected status, reviewed_at, review_note
-│   ├── alembic.ini
+│   ├── alembic/                    # Async migrations (schema + review metadata)
 │   ├── app/
-│   │   ├── config.py         # Pydantic Settings (.env loader)
-│   │   ├── database.py       # Async engine & sessionmaker (asyncpg) with lazy init
-│   │   ├── models.py         # SQLAlchemy 2.0 ORM models (paise BigInt, enums)
-│   │   ├── schemas.py        # Pydantic v2 validation schemas & AttachmentInfo
-│   │   ├── storage.py        # StorageBackend interface & PostgreSQL bytea implementation
-│   │   ├── file_validation.py # Magic-byte, size (<=5MB img, <=10MB PDF), and pypdf page limits
-│   │   ├── crud.py           # Idempotent create, OPE- reference ID, duplicate check, review
-│   │   ├── seed.py           # Idempotent seed: 1 user, 7 curated claims (₹3,420.50) with Gemini drafts
-│   │   └── main.py           # FastAPI app, /expenses, /expenses/extract, /expenses/attachments, /health
-│   ├── tests/
-│   │   ├── test_phase2.py    # Validation, paise, idempotency
-│   │   ├── test_phase3.py    # Magic bytes, PDF checks, size limits
-│   │   ├── test_phase4.py    # Extraction caching, verification, itemized bills, rate limiting
-│   │   ├── test_phase5.py    # Pagination, category labels, feed response
-│   │   ├── test_phase6.py    # API endpoints and mobile edge cases
-│   │   └── test_api_endpoints.py # Review decisions, attachments ownership, API behaviour
-│   ├── requirements.txt
-│   ├── .env.example
-│   └── .env
+│   │   ├── config.py               # Settings and CORS origins
+│   │   ├── database.py             # Async engine/session
+│   │   ├── models.py               # Users, expenses, attachments, cache, rate limits
+│   │   ├── schemas.py              # Validation and API schemas
+│   │   ├── storage.py              # PostgreSQL bytea storage backend
+│   │   ├── file_validation.py      # Magic bytes, size limits, PDF page checks
+│   │   ├── crud.py                 # Create, duplicate detection, review status mapping
+│   │   ├── extraction_service.py   # Gemini extraction, verification, fallbacks
+│   │   ├── seed.py                 # Idempotent demo user and 7 claims
+│   │   └── main.py                 # FastAPI app and routes
+│   ├── scripts/eval_extraction.py  # Gemini evaluation harness
+│   └── tests/                      # 69 backend tests
 └── frontend/
-    ├── app/                  # Expo Router file-based screens
-    │   ├── _layout.tsx       # Root stack, role provider, desktop app shell, global CSS
-    │   ├── index.tsx         # Redirects to /home
-    │   ├── home.tsx          # Expenses feed (summary, filters, seeded claims, FAB)
-    │   ├── snap.tsx          # Bill capture → Gemini analysis → review
-    │   ├── no-bill.tsx       # UPI proof/documents + optional note → Gemini → review
-    │   ├── review.tsx        # Shared editable AI draft and submit
-    │   ├── confirmation.tsx  # Confirmation screen (reference ID, amount)
-    │   ├── finance.tsx       # Finance claims inbox: pending / approved / rejected
-    │   ├── finance/
-    │   │   └── [id].tsx      # Finance claim review: Gemini extraction + approve/reject
-    │   └── expense/
-    │       └── [id].tsx      # Read-only expense detail with IST time and attachment view
-    ├── components/
-    │   ├── AnalysisOverlay.tsx  # Shared bill/payment AI progress and fallback UI
-    │   ├── AttachmentGrid.tsx   # Thumbnail grid for images and PDFs
-    │   ├── DesktopSidebar.tsx   # Role-aware desktop navigation and workspace switch
-    │   ├── ExpenseFields.tsx    # Shared fields used by the review screen
-    │   ├── LineItemsCard.tsx    # Every itemized-bill row with totals and mismatch warnings
-    │   ├── PDFCard.tsx          # PDF document card with View action
-    │   └── RoleContext.tsx      # Client-side employee/finance role switch (no auth)
-    ├── assets/
-    ├── theme.ts              # Single source of truth for design tokens
-    ├── utils/
-    │   ├── api.ts            # Upload, extract, submit, feed, detail, review API calls
-    │   ├── draft_store.ts    # Preserves the full Gemini draft from capture to review
-    │   ├── extraction.ts     # Extraction summary and confidence helpers
-    │   ├── file_picker.ts    # Native image/PDF pickers
-    │   ├── format.ts         # INR formatting (paise to ₹), IST dates & times
-    │   ├── image_processing.ts # Client-side HEIC-to-JPEG & canvas compression (max 1600px, 0.85)
-    │   └── status.ts         # Shared claim status colours and labels
-    ├── app.json              # Expo configuration
-    ├── package.json          # Dependencies (React 19, RN 0.79, Expo 53)
-    ├── tsconfig.json
-    ├── .env.example
-    └── .env
+    ├── index.html
+    ├── vite.config.ts
+    ├── tailwind.config.js
+    ├── vercel.json                 # SPA rewrite for static deployment
+    ├── src/
+    │   ├── App.tsx                 # Routes and 404 redirect
+    │   ├── main.tsx
+    │   ├── index.css
+    │   ├── context/RoleContext.tsx # Employee/finance role persistence
+    │   ├── components/
+    │   │   ├── ui/                 # Shared design system
+    │   │   ├── employee/           # Employee layout, file picker, analysis modal
+    │   │   └── finance/            # Finance sidebar/drawer shell
+    │   ├── pages/
+    │   │   ├── role-select/
+    │   │   ├── employee/
+    │   │   └── finance/
+    │   └── lib/
+    │       ├── api.ts              # API client, types, categories, constants
+    │       ├── analytics.ts        # Finance KPI/chart aggregation
+    │       ├── extraction.ts       # Gemini draft summaries and flags
+    │       ├── image.ts            # HEIC conversion and compression
+    │       ├── draftStore.ts       # Session draft/confirmation state
+    │       ├── fallbackDraft.ts    # Manual draft when AI is unavailable
+    │       ├── format.ts           # INR paise, IST dates/times
+    │       ├── status.ts           # Status copy and tones
+    │       └── hooks.ts            # Reload-on-focus hook
+    └── package.json
 ```
 
 ---
@@ -100,255 +95,221 @@ Expense_Capture/
 ## 🚀 Running Locally
 
 ### Prerequisites
+
 - Docker & Docker Compose
 - Python 3.11+
 - Node.js 18+ and npm
 
-### 1. Database Setup (Docker)
-Start the PostgreSQL container:
+### 1. Database
+
 ```bash
 docker-compose up -d
 ```
+
 PostgreSQL runs on `localhost:5432` with database `ope_dev`, user `ope_user`, and password `ope_local_pass`.
 
-### 2. Backend Setup
+### 2. Backend
+
 ```bash
 cd backend
-
-# Create and activate virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Run migrations
+cp .env.example .env        # add GEMINI_API_KEY
 alembic upgrade head
-
-# Start FastAPI server
 uvicorn app.main:app --reload --port 8000
 ```
-On startup, the backend automatically runs `app/seed.py`, seeding:
-- User: `Pushpendra Suryawanshi` (`d290f1ee-6c54-4b01-90e6-d701748f0851`)
-- 7 curated Indian claims totaling ₹3,420.50 (Uber, Blue Tokai, Taj Hotel, IndiGo, Amazon, Vodafone, The Grill) with realistic paise amounts, IST timestamps, and a stored Gemini extraction snapshot.
-- One rejected Amazon Business claim with a finance note so the Rejected section is populated on first run.
-- Runs 24h orphan attachment cleanup.
 
-Verify the server:
+Verify:
+
 ```bash
 curl http://localhost:8000/health
-# {"status":"ok","timestamp":"2026-10-28T..."}
 ```
 
-### 3. Frontend Setup
+On startup the backend seeds one user and seven curated claims (₹3,420.50 total) with stored Gemini extraction snapshots. The seed is idempotent.
+
+### 3. Frontend
+
 ```bash
 cd frontend
-
-# Install npm packages
+cp .env.example .env        # VITE_API_BASE_URL=http://localhost:8000
 npm install
-
-# Start Expo Web dev server
-npm run web
+npm run dev
 ```
-The application will open at `http://localhost:8081`.
 
-### 4. Finance Workspace
+Open `http://localhost:5173`. The backend allows `http://localhost:5173` and `http://localhost:4173` by default.
 
-There is no login or authentication. The desktop sidebar switches between two client-side workspaces and remembers the choice in `localStorage`:
+### 4. Production build check
 
-- **Employee** — `Expenses`, `Quick capture`, `No-bill claim`.
-- **Finance** — `Claims inbox`, `Approved payments`, `Rejected payments`.
+```bash
+cd frontend
+npm run typecheck
+npm run build
+npm run preview
+```
 
-The finance detail screen opens every claim with:
-- The submitted amount, date, payee, category, business purpose, receipt type, and attachments.
-- The full Gemini extraction stored with the claim: read fields, per-field confidence, cross-checks, and model notices.
-- The employee and submission metadata.
-- An approve/reject decision card. Rejection requires a short reviewer note; approval notes are optional.
+---
 
-Decisions are persisted through:
+## 🧑‍💼 Employee Flow
 
-```http
-PATCH /expenses/{reference_id}/review
-Content-Type: application/json
+1. Open `/employee` and see the current month total, pending count, category filters, and recent claims.
+2. **Snap a bill** uses `<input type="file" accept="image/*" capture="environment">` on supported devices, with a gallery/file fallback. Up to three images or PDFs can be attached to one bill.
+3. HEIC/HEIF files are converted to JPEG, and images are compressed before upload. PDFs are capped at 10 MB and five pages.
+4. **No bill** lets employees upload a payment screenshot or create a manual claim when nothing is attached.
+5. AI extraction pre-fills amount, date, merchant, category, purpose, tax, reference numbers, and line items. Confidence and verification flags are shown for review.
+6. Submitting creates an `OPE-XXXXXX` claim. The confirmation screen shows the reference and amount, and the new claim appears at the top of the feed.
+7. Claim detail shows the current status, finance note, attachments, line items, and extracted values.
 
+If Gemini is unavailable, the bill is still uploaded and the employee continues with a manual draft.
+
+---
+
+## 🏦 Finance Flow
+
+- **Claims queue**: all claims with search across merchant/reference/purpose, category and date filters, status chips with counts, sortable columns, and a dark review-queue summary showing pending amount/count plus approved/rejected counts.
+- The list initially shows three claims. **More transactions** reveals the full list, then paginates at 10 per page. Filters reset the preview.
+- **Claim detail**: dark claim summary, bill/receipt beside extracted fields, AI flags, line-item reconciliation, employee identity and submission metadata, finance notes, and a decision panel.
+- Decisions: **Approve** (comment optional), **Request info** (comment required, moves the claim to `under_review`), **Reject** (comment required).
+- **Analytics**: approved spend, pending spend, total claims, approval rate, spend by category, and spend over the last six months. Metrics are computed client-side from all fetched claims.
+- Tables become stacked cards below 768px, and the sidebar becomes a drawer below 1024px. All routes work from 360px to 1920px without horizontal scrolling.
+- Decisions reload automatically in both workspaces via focus refresh, so a finance change appears in the employee feed and detail.
+
+---
+
+## 🔌 API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/health` | Service check |
+| `POST` | `/expenses/extract` | Upload up to 3 files + optional note; returns an AI draft |
+| `POST` | `/expenses/attachments` | Persist attachments before manual submission |
+| `POST` | `/expenses` | Create a claim (requires `Idempotency-Key`) |
+| `GET` | `/expenses` | Cursor-paginated claim feed |
+| `GET` | `/expenses/{identifier}` | Claim by UUID or OPE reference |
+| `PATCH` | `/expenses/{identifier}/review` | `approve`, `reject`, or `request_info` |
+| `GET` | `/expenses/{identifier}/attachments/{attachment_id}` | Claim-scoped attachment |
+| `GET` | `/attachments/{attachment_id}` | Draft-scoped attachment |
+
+Review payload:
+
+```json
 {
-  "action": "approve" | "reject",
-  "note": "Optional for approval; required for rejection",
+  "action": "approve | reject | request_info",
+  "note": "Required for reject/request_info",
   "reviewer": "Finance Team • OPE"
 }
 ```
 
-The updated claim is returned immediately and the employee feed/detail reflects the decision. The endpoint is intentionally unauthenticated in this prototype; authentication and server-enforced roles are out of scope.
+Status mapping:
+
+- `approve` → `approved`
+- `reject` → `rejected`
+- `request_info` → `under_review`
+
+The endpoint is intentionally unauthenticated in this prototype; production role enforcement belongs on the server.
 
 ---
 
-## 🧪 Running Tests
+## 🧪 Tests
 
-Run the full backend test suite:
 ```bash
-PYTHONPATH=backend backend/.venv/bin/pytest backend/tests/ -v
+PYTHONPATH=backend backend/.venv/bin/pytest backend/tests/ -q
 ```
-All 67 unit tests verify:
-- Exact rupee-to-paise conversion and rounding
-- Positive amount requirement and ₹10,00,000 ceiling enforcement
-- Future date rejection (today and past dates allowed)
-- Merchant requirement when bill/screenshot is present
-- Reason character count rules (min 3 chars normally; min 10 chars when category is Other or no bill)
-- All 7 predefined categories
-- OPE-XXXXXX reference ID generation (alphanumeric, unique)
-- Magic-byte detection (JPEG `FF D8 FF`, PNG `89 50 4E 47`, WebP `RIFF..WEBP`, PDF `%PDF-`)
-- Image size limits (<= 5 MB) and PDF size limits (<= 10 MB)
-- Rejection of fake PDFs, empty files, and batch limits (> 3 files)
-- PDF encryption check and max 5-page ceiling
-- Deterministic extraction cache key calculation (sha256 of sorted hashes + normalized note + today IST)
-- Code-side verification: subtotal + tax reconciliation, typed note amount override, foreign currency detection, future date reset, multiple bills warning
-- Safe fallback draft on timeout, budget expiry, or rate limits (never blocking manual user flow)
-- Duplicate detection by transaction reference (`txn_ref`), `(merchant + amount + date)` tuple, and attachment `sha256` hash
-- Trusted proxy IP extraction (`X-Forwarded-For` when `TRUSTED_PROXY=true`, socket IP when `false`)
-- Audit field tracking (`edited_fields` list)
-- Finance approval updates status and reviewer, rejection requires a note, and missing claims return 404
-- Itemized bills keep every row (including 10+ entries), preserve unreadable amounts, and flag line-item totals that disagree with the bill
-- An attachment can only be read through the claim it belongs to; mismatched claim IDs return 404
+
+The 69 backend tests cover:
+
+- Paise conversion, amount ceilings, future dates, merchant/reason/category validation
+- OPE reference generation and idempotent creation
+- Magic-byte checks, file size/page limits, encrypted PDFs, batch limits
+- Extraction caching, verification, typed-note overrides, currency and multi-bill notices
+- Duplicate detection and attachment ownership
+- Cursor pagination and category labels
+- Review decisions including `request_info` note validation
+- Itemized bills, unreadable amounts, and reconciliation warnings
+
+Frontend checks:
+
+```bash
+cd frontend
+npm run typecheck
+npm run build
+```
 
 ---
 
-## 📊 Running Extraction Evaluation
+## 📊 Gemini Evaluation
 
-Run the evaluation script to test live Gemini extraction against sample bills:
 ```bash
-# Low thinking level (fast structured extraction)
 PYTHONPATH=backend backend/.venv/bin/python3 backend/scripts/eval_extraction.py --thinking low
-
-# High thinking level (deep extraction for ambiguous receipts)
 PYTHONPATH=backend backend/.venv/bin/python3 backend/scripts/eval_extraction.py --thinking high
-
-# Custom model override
-PYTHONPATH=backend backend/.venv/bin/python3 backend/scripts/eval_extraction.py --model gemini-3.6-flash --thinking low
 ```
-The script reads synthetic sample receipts from `samples/` against ground truth in `samples/expected.json` and outputs:
-- Per-field accuracy (exact for amount and date, normalized fuzzy match for merchant)
-- Latency (p50, p95)
-- Success / failure breakdown and token counts
+
+The script compares extraction against `samples/expected.json` and reports field accuracy, latency (p50/p95), and token usage.
 
 ---
 
-## 🚀 Deployment Guide
+## 🚀 Deployment
 
-### 1. Backend + PostgreSQL (Render / Railway / Fly.io / Cloud Run)
-- **Database**: Provision PostgreSQL 16 (or higher). Set `DATABASE_URL` in environment.
-- **Run migrations**:
-  ```bash
-  alembic upgrade head
-  ```
-- **Start command**:
-  ```bash
-  uvicorn app.main:app --host 0.0.0.0 --port 8000
-  ```
-- **Configure environment**: Set `GEMINI_API_KEY`, `FRONTEND_ORIGINS`, `TRUSTED_PROXY=true` (when behind reverse proxy / load balancer).
+### Backend
 
-### 2. Frontend Static Web Build (Vercel / Netlify / Cloudflare Pages / S3)
-- **Build command**:
-  ```bash
-  cd frontend
-  EXPO_PUBLIC_API_URL=https://your-backend-api.com npm run build:web
-  ```
-- **Output directory**: `frontend/dist`
-- The static files can be served directly by any web server or static CDN.
+- Provision PostgreSQL 16+ and set `DATABASE_URL`.
+- Run `alembic upgrade head`.
+- Start with `uvicorn app.main:app --host 0.0.0.0 --port 8000`.
+- Set `GEMINI_API_KEY`, `FRONTEND_ORIGINS=https://your-frontend.example`, and `TRUSTED_PROXY=true` behind a load balancer.
+- Never expose the Gemini key to the frontend.
 
----
+### Frontend
 
-## ❄️ Free-Tier Cold-Starts & Storage Limits
-
-- **Free-Tier Cold Starts**: Free hosting platforms (Render, Railway, Fly.io free tiers) put inactive containers to sleep. On initial load, the frontend initiates a `/health` probe. If the server takes over 3 seconds to respond, an animated top banner notifies the user: *"Waking up the server…"*.
-- **PostgreSQL 0.5 GB Free Tier Storage Limit**:
-  - Image attachments are compressed client-side (max 1600px long edge, JPEG quality 0.85) before upload.
-  - PDF uploads are capped at 10 MB and max 5 pages.
-  - An automated 24-hour cleanup job runs on backend startup and during extraction sweeps, deleting unattached orphan files (`expense_id IS NULL AND created_at < NOW() - INTERVAL '24 hours'`).
-
----
-
-## ⚠️ Known Limitations
-
-1. **Unauthenticated Prototype**: Per specification, there is no login/auth logic. All submissions are tied to a single seeded user (`Pushpendra Suryawanshi`). The Employee/Finance workspace switch is client-side only; the review endpoint trusts the reviewer label supplied by the console. Production role enforcement would belong on the server.
-2. **Rate Limits on Public Endpoint**: To protect against abuse on public unauthenticated endpoints, `/expenses/extract` enforces a 20 request/hour per-IP limit and a 300 extraction/day global cap stored in PostgreSQL. When exceeded, the app returns a graceful fallback draft so users can always enter expenses manually.
-3. **Free-Tier Gemini Model Availability**: Free-tier keys experience occasional 503 high-demand spikes. Extraction starts with `gemini-3.5-flash-lite` and falls back through `gemini-3.5-flash`, `gemini-2.5-flash`, `gemini-3.6-flash`, `gemini-3.8-flash`, and `gemini-2.5-flash-lite`.
-4. **Single-Purpose Scope**: Designed strictly for out-of-pocket field expenses in ~30 seconds. The finance console intentionally covers only claim review (approve/reject with a note); policy engines, accounting integrations, analytics, and gamification are out of scope.
+- Deploy `frontend/` to Vercel, Netlify, Cloudflare Pages, or any static host.
+- Build command: `npm run build` (runs TypeScript checking and Vite).
+- Output directory: `dist`.
+- Set `VITE_API_BASE_URL=https://your-backend.example`.
+- `vercel.json` rewrites all paths to `index.html` for client-side routing.
 
 ---
 
 ## 🔐 Environment Variables
 
 ### Backend (`backend/.env`)
+
 | Variable | Default | Description |
 |---|---|---|
-| `DATABASE_URL` | `postgresql+asyncpg://ope_user:ope_local_pass@localhost:5432/ope_dev` | Async PostgreSQL connection string |
-| `GEMINI_API_KEY` | `""` | Google Gemini API key |
-| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Primary Gemini model for extraction |
-| `GEMINI_FALLBACK_MODELS` | `gemini-3.5-flash,gemini-2.5-flash,gemini-3.6-flash,gemini-3.8-flash,gemini-2.5-flash-lite` | Ordered fallback models when the primary is unavailable |
-| `FRONTEND_ORIGINS` | `http://localhost:8081` | Comma-separated CORS origins |
-| `TRUSTED_PROXY` | `false` | When true, reads client IP from `X-Forwarded-For` |
-| `RATE_LIMIT_PER_IP` | `20` | Max extractions per IP per hour |
-| `DAILY_GLOBAL_CAP` | `300` | Max total Gemini extractions across all users per day |
+| `DATABASE_URL` | `postgresql+asyncpg://ope_user:ope_local_pass@localhost:5432/ope_dev` | Async PostgreSQL URL |
+| `GEMINI_API_KEY` | empty | Google Gemini key (server-side only) |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Primary extraction model |
+| `GEMINI_FALLBACK_MODELS` | `gemini-3.5-flash,gemini-2.5-flash,...` | Ordered fallbacks |
+| `FRONTEND_ORIGINS` | `http://localhost:5173,http://localhost:4173` | Comma-separated CORS origins |
+| `TRUSTED_PROXY` | `false` | Read client IP from `X-Forwarded-For` when true |
+| `RATE_LIMIT_PER_IP` | `20` | Extractions per IP per hour |
+| `DAILY_GLOBAL_CAP` | `300` | Total Gemini extractions per day |
 
 ### Frontend (`frontend/.env`)
+
 | Variable | Default | Description |
 |---|---|---|
-| `EXPO_PUBLIC_API_URL` | `http://localhost:8000` | Backend API base URL (injected at build time) |
+| `VITE_API_BASE_URL` | `http://localhost:8000` | Backend API base URL, injected at build time |
 
 ---
 
-## 📱 Phases Implemented
+## ❄️ Cold Starts, Rate Limits & Storage
 
-1. **Phase 1 — Skeleton & DB**: PostgreSQL via docker-compose, manual Alembic migration, seed data, /health, CORS, ONE theme file, Expo web shell with Welcome and Home screens.
-2. **Phase 2 — Manual Entry End to End**: Review form (5 fields), server and UI validation, idempotent POST /expenses with OPE- reference IDs, confirmation screen, feed with date grouping and load more, expense detail screen.
-3. **Phase 3 — File Capture & Storage**:
-   - **Snap a bill screen (`app/snap.tsx`)**: Static tips card, "Take photo" and "Choose photo or PDF" pickers, "+ Add another photo" chip (max 3 files, all parts of ONE bill).
-   - **No bill screen (`app/no-bill.tsx`)**: Minimal upload surface for UPI payment screenshots or supporting documents, an optional note about the payment, and one AI action that sends everything to Gemini. Multi-file upload (max 3), native image/PDF pickers, and a manual-entry fallback.
-   - **Shared AI analysis**: `AnalysisOverlay` shows the same progress, success, manual, and retry states for bill and payment-proof analysis.
-   - **Client-Side Image Processing**: HEIC/HEIF to JPEG browser conversion via `heic2any`, canvas compression (max 1600px long edge, JPEG quality 0.85, never below legibility), PDFs untouched.
-   - **Attachment Storage & Serving**: `StorageBackend` interface with PostgreSQL BYTEA storage, serving endpoints (`GET /expenses/{id}/attachments/{aid}`, `GET /attachments/{aid}`) with stored Content-Type, `X-Content-Type-Options: nosniff`, and `inline` disposition.
-   - **File Validation**: Strict magic-byte checks, <=5 MB per image, <=10 MB and <=5 pages per PDF, encrypted PDF rejection, max 3 files total.
-   - **Orphan Cleanup**: Automated 24h cleanup on startup and scheduled sweeps.
-4. **Phase 4 — Gemini Extraction & Verification**:
-   - **Gemini Flash Model**: `gemini-3.8-flash` with `thinking_level="low"`, `media_resolution="media_resolution_high"`, and `temperature=0.0`.
-   - **Extraction Endpoint (`POST /expenses/extract`)**: Multipart 0-3 files + optional user note + optional attachment kind (`bill`, `payment_screenshot`, `supporting`). Used by both bill capture and no-bill claims.
-   - **Postgres Extraction Cache**: Keyed by `sha256(sorted file hashes | normalized note | today IST)`. Zero duplicate Gemini calls.
-   - **Rate Limiting**: PostgreSQL-backed per-IP hourly limit (20 req/hr) and global daily cap (300 req/day with `__global__` sentinel row).
-   - **Code-Side Verification**: Integer paise conversion, subtotal + tax reconciliation, typed note amount override, foreign currency notices, future date reset, multiple distinct bills detection.
-   - **Graceful Fallback**: Returns draft object even on timeout/budget expiry with status `failed` so user is never blocked from filing manually.
-   - **Evaluation Script (`backend/scripts/eval_extraction.py`)**: Runs sample receipts comparing accuracy and timing with `--thinking low/high`.
-5. **Phase 5 — Feed Polish, Cursor Pagination & Abuse Protection**:
-   - **Deterministic Cursor-Based Pagination**: Cursor encoding `(created_at desc, id desc)` supporting forward paging through unlimited records.
-   - **Pull to Refresh**: Native `RefreshControl` integrating seamless manual re-fetching on the feed.
-   - **Duplicate Detection**: Three-layer duplicate warning engine checking `txn_ref`, `(user_id, merchant, amount_minor, expense_date)`, and attachment `sha256` hash.
-   - **Sentinels & Proxy IP Handling**: `TRUSTED_PROXY=true` reading `X-Forwarded-For` client IP, falling back to socket IP.
-6. **Phase 6 — Mobile Polish, Accessibility & Production Edge Cases**:
-   - **48 px Minimum Tap Targets**: Enforced on all interactive elements across all screens (back buttons, category chips, picker cards, remove actions, pagination buttons).
-   - **Safe Areas**: `useSafeAreaInsets` integrated across sticky bottom action bars, FAB, and scroll views, preventing notch or navigation bar collision.
-   - **Zero Horizontal Scroll**: Guaranteed fluid responsive layout from 320px/360px up to 420px max-width centered desktop container with global box-sizing and `overflow-x: hidden`.
-   - **Local Draft Resilience & One-Tap Retry**: Active review form persists to session storage across refreshes; network submission errors feature immediate one-tap retry without lost input.
-   - **Audit Field Tracking**: `edited_fields` audit array tracked when AI pre-filled fields are altered by the user before submitting.
-7. **Phase 7 — No-Bill AI & Design Alignment**:
-   - **AI-Assisted No-Bill Claims**: Employees upload UPI transaction screenshots or other documents and optionally describe the payment. Gemini reads every file plus the note and returns the same draft shape as bill extraction.
-   - **Shared Review Handoff**: Extracted payment claims land on the same review screen, with payment-proof copy, attachment labels, and an AI summary.
-   - **Resilient Fallback**: If analysis fails, uploaded evidence is still saved and the user can complete the claim manually.
-   - **Reference-Aligned UI**: Expenses Feed, Quick Capture, Expense Detail, No-Bill, Review, and Confirmation share the warm paper/ink/amber theme on app and web.
-8. **Phase 8 — Finance Console & Desktop Workspaces**:
-   - **Role-Based Workspaces**: A persistent desktop sidebar switches between Employee and Finance views without login or mock authentication; the choice is stored locally.
-   - **Claims Inbox**: Every employee claim lands in Finance with pending, approved, and rejected tabs, totals, and AI confidence.
-   - **Full Claim Review**: Finance opens the claim summary, business purpose, employee metadata, attachments, and the stored Gemini extraction with per-field confidence and notices.
-   - **Real Decisions**: Approve/reject actions persist through `PATCH /expenses/{identifier}/review`; rejection requires a note, and the employee feed/detail reflects the decision immediately.
-   - **Desktop Layouts**: Every screen has a purpose-built desktop composition (persistent sidebar, wide feed, two-column capture/review/finance workspaces) while mobile widths stay true to the reference designs.
-9. **Phase 9 — Edge-Case Hardening**:
-   - **Long Itemized Bills**: Gemini asks for every visible line-item row, including 10+ entries. All rows are stored with the claim, shown on review, employee detail, and finance detail, and reconciled against the bill total. Unreadable amounts stay visible as missing values instead of disappearing.
-   - **Attachment Integrity**: Every attachment is owned by exactly one claim and can only be fetched through that claim's URL. JPEG, PNG, WebP, and PDF evidence stays stored in PostgreSQL and is reopenable from both employee and finance detail forever.
-   - **Complete Finance Intake**: The finance inbox pages through every claim rather than only the first 100, so a growing workspace never silently drops submissions.
-   - **Return-to-Feed Refresh**: The employee feed and finance inbox reload on focus, so a claim filed in Quick Capture or No-Bill appears in Recent Activity and the finance queue immediately.
-   - **Seed Coverage**: Demo data includes a 10-line Grill House bill so the itemized-receipt path is exercised on first launch.
+- Free hosting tiers may sleep. The frontend's first API request can take a few seconds while the backend wakes.
+- `/expenses/extract` is public and rate-limited: 20 requests/hour per IP and 300 extractions/day globally, backed by PostgreSQL.
+- Images are compressed client-side; PDFs are capped at 10 MB and 5 pages.
+- Orphan attachments are deleted after 24 hours by the startup cleanup job.
+- PostgreSQL free tiers are small, so attachments use compressed JPEGs and page-limited PDFs.
+
+---
+
+## ⚠️ Known Limitations
+
+1. **Unauthenticated prototype**: All claims belong to the single seeded user. The employee/finance switch is client-side, and the review endpoint trusts the supplied reviewer label. Server-side authentication and role enforcement are out of scope.
+2. **Client-side analytics**: Finance metrics aggregate up to 5,000 fetched claims in the browser rather than a dedicated reporting service.
+3. **AI variability**: Free-tier Gemini keys can return 503s or lower-quality reads. The app always falls back to a manual draft, and verification flags ask the employee or reviewer to check uncertain fields.
+4. **Demo data**: The seeded claims and synthetic receipts are for demonstration only. Do not use real receipts with free-tier API keys.
 
 ---
 
 ## 🔒 Privacy & AI Notice
 
-- **Privacy**: The Gemini extraction pipeline operates on receipts and expense documents. On free-tier API keys, Google may use prompt content for model improvement; use only synthetic or sanitized sample bills for testing.
-- **AI Coding Tool Notice**: AI coding tools (Antigravity by Google DeepMind) were used in the design, architecture, and development of this codebase.
+The Gemini extraction pipeline sends receipt and payment-document images to Google for processing. On free-tier keys, Google may use prompt content for model improvement; use synthetic or sanitized documents when testing. AI coding tools were used in the design, architecture, and development of this codebase.

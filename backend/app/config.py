@@ -32,7 +32,7 @@ class Settings(BaseSettings):
         "gemini-3.5-flash,gemini-2.5-flash,gemini-3.6-flash,"
         "gemini-3.8-flash,gemini-2.5-flash-lite"
     )
-    FRONTEND_ORIGINS: str = "http://localhost:8081"
+    FRONTEND_ORIGINS: str = "http://localhost:5173,http://localhost:4173"
     TRUSTED_PROXY: bool = False
     RATE_LIMIT_PER_IP: int = 20
     DAILY_GLOBAL_CAP: int = 300

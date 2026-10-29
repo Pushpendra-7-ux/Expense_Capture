@@ -364,6 +364,40 @@ async def test_review_expense_reject_records_note(client):
 
 
 @pytest.mark.asyncio
+async def test_review_expense_request_info_requires_note(client):
+    """Requesting more information without a note is rejected before writing."""
+    with patch("app.main.review_expense", new_callable=AsyncMock) as mock_review:
+        resp = await client.patch(
+            "/expenses/OPE-REV123/review",
+            json={"action": "request_info", "note": ""},
+        )
+
+        assert resp.status_code == 422
+        assert "requesting information" in resp.json()["detail"].lower()
+        mock_review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_review_expense_request_info_records_note(client):
+    """Request Info keeps the claim under review and exposes the note."""
+    expense = _reviewed_expense("under_review")
+    expense.review_note = "Add the GST invoice for this stay."
+
+    with patch("app.main.review_expense", new_callable=AsyncMock) as mock_review:
+        mock_review.return_value = expense
+        resp = await client.patch(
+            "/expenses/OPE-REV123/review",
+            json={"action": "request_info", "note": "Add the GST invoice for this stay."},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["review_status"] == "under_review"
+        assert resp.json()["review_note"] == "Add the GST invoice for this stay."
+        kwargs = mock_review.await_args.kwargs
+        assert kwargs["action"] == "request_info"
+
+
+@pytest.mark.asyncio
 async def test_review_expense_not_found(client):
     """Reviewing a missing claim returns 404."""
     with patch("app.main.review_expense", new_callable=AsyncMock) as mock_review:

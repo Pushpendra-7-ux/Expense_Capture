@@ -591,13 +591,13 @@ export function EmployeeFeedPage() {
               {currentMonthLabel}
             </span>
             <Link to="/employee/no-bill">
-              <Button variant="secondary" size="md">
+              <Button variant="secondary" size="lg">
                 <ReceiptText className="h-4 w-4" />
                 No bill
               </Button>
             </Link>
             <Link to="/employee/snap">
-              <Button size="md">
+              <Button size="lg">
                 <Camera className="h-4 w-4" />
                 New expense
               </Button>

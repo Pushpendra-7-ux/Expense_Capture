@@ -7,7 +7,6 @@ import {
   ChevronRight,
   HelpCircle,
   LayoutDashboard,
-  Plus,
   ReceiptText,
   Sparkles,
   type LucideIcon,
@@ -307,17 +306,6 @@ export function EmployeeLayout() {
               label="Analytics"
               icon={BarChart3}
             />
-
-            <NavLink
-              to="/employee/snap"
-              className="relative -mt-6 flex flex-col items-center gap-1 text-[10px] font-semibold text-ink"
-              aria-label="Snap a bill"
-            >
-              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-ink text-cream shadow-dock ring-4 ring-paper transition-transform active:scale-95">
-                <Plus className="h-6 w-6" />
-              </span>
-              <span>Snap</span>
-            </NavLink>
 
             <DockLink to="/employee/no-bill" label="No-bill" icon={ReceiptText} />
           </div>

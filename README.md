@@ -293,7 +293,7 @@ The script compares extraction against `samples/expected.json` and reports field
 
 | Variable | Default | Description |
 |---|---|---|
-| `VITE_API_BASE_URL` | `http://localhost:8000` | Backend API base URL, injected at build time |
+| `VITE_API_BASE_URL` | `https://expense-capture-1.onrender.com` | Backend API base URL, injected at build time |
 
 ---
 

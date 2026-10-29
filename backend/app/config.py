@@ -19,6 +19,7 @@ class Settings(BaseSettings):
         GEMINI_MODEL:       Which Gemini model to call.
         FRONTEND_ORIGINS:   Comma-separated list of allowed CORS origins.
         TRUSTED_PROXY:      Whether the app runs behind a trusted reverse proxy.
+        RATE_LIMIT_ENABLED: Toggle rate limiting on/off (useful for prototypes).
         RATE_LIMIT_PER_IP:  Max requests per IP per rolling window.
         DAILY_GLOBAL_CAP:   Max Gemini extractions across all users per day.
     """
@@ -34,8 +35,9 @@ class Settings(BaseSettings):
     )
     FRONTEND_ORIGINS: str = "http://localhost:5173,http://localhost:4173"
     TRUSTED_PROXY: bool = False
-    RATE_LIMIT_PER_IP: int = 20
-    DAILY_GLOBAL_CAP: int = 300
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_PER_IP: int = 10000
+    DAILY_GLOBAL_CAP: int = 100000
 
     @property
     def cors_origins(self) -> list[str]:

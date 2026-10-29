@@ -47,6 +47,9 @@ async def check_and_increment_rate_limits(
 
     Returns (allowed, error_message).
     """
+    if not settings.RATE_LIMIT_ENABLED:
+        return True, None
+
     now_utc = datetime.now(timezone.utc)
 
     # 1. Check Global Daily Cap
